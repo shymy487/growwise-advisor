@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -21,6 +20,48 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import { ArrowLeft, FileDown, Share2, RefreshCw, PenLine } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+
+const MOCK_CROP_RECOMMENDATIONS: CropRecommendation[] = [
+  {
+    name: "Sample Crop 1",
+    description: "This is a sample crop recommendation for demonstration purposes when the API is unavailable.",
+    estimatedProfit: 1200,
+    marketPrice: 4.5,
+    score: 95,
+    growthPeriod: "3-4 months",
+    waterRequirements: "Medium, about 15-20 inches during growing season",
+    soilCompatibility: ["Loamy", "Clay Loam"],
+    isTopPick: true,
+    maturityPeriod: "90-120 days",
+    bestPlantingTime: "Spring to early Summer"
+  },
+  {
+    name: "Sample Crop 2",
+    description: "Another sample crop for demonstration. In normal conditions, the AI would analyze your specific farm data.",
+    estimatedProfit: 950,
+    marketPrice: 3.2,
+    score: 85,
+    growthPeriod: "2-3 months",
+    waterRequirements: "Low to medium, drought resistant",
+    soilCompatibility: ["Sandy Loam", "Loamy"],
+    isTopPick: false,
+    maturityPeriod: "60-80 days",
+    bestPlantingTime: "Early to mid Spring"
+  },
+  {
+    name: "Sample Crop 3",
+    description: "Third example crop. The actual recommendations would be tailored to your location and conditions.",
+    estimatedProfit: 1100,
+    marketPrice: 5.0,
+    score: 80,
+    growthPeriod: "4-5 months",
+    waterRequirements: "High, regular irrigation needed",
+    soilCompatibility: ["Rich Loam", "Clay Loam"],
+    isTopPick: false,
+    maturityPeriod: "110-140 days",
+    bestPlantingTime: "Late Spring"
+  }
+];
 
 const Results = () => {
   const { isAuthenticated } = useAuth();
@@ -70,7 +111,7 @@ const Results = () => {
               notes: profile.notes,
             });
             
-            if (result) {
+            if (result && result.crops && result.crops.length > 0) {
               setRecommendations(result.crops);
               setReasoning(result.reasoning);
               
@@ -78,12 +119,23 @@ const Results = () => {
               await updateFarmProfile(profile.id, {
                 recommendations: result.crops,
               });
+            } else {
+              // API returned empty or invalid result, use fallback
+              toast.warning("Using sample recommendations", {
+                description: "We're having trouble connecting to our AI service. Showing sample data instead.",
+              });
+              setRecommendations(MOCK_CROP_RECOMMENDATIONS);
+              setReasoning("Sample data displayed due to AI service connection issues. Please try again later for personalized recommendations.");
             }
           } catch (err) {
             console.error("Failed to get recommendations:", err);
             toast.error("Failed to analyze farm data", {
-              description: "Please try again or modify your farm details",
+              description: "Using sample recommendations instead. Please try again later.",
             });
+            
+            // Use fallback data
+            setRecommendations(MOCK_CROP_RECOMMENDATIONS);
+            setReasoning("Sample data displayed due to AI service connection issues. Please try again later for personalized recommendations.");
           } finally {
             setAnalyzing(false);
             setLoading(false);
@@ -125,7 +177,7 @@ const Results = () => {
         notes: farmProfile.notes,
       });
       
-      if (result) {
+      if (result && result.crops && result.crops.length > 0) {
         setRecommendations(result.crops);
         setReasoning(result.reasoning);
         
@@ -136,6 +188,11 @@ const Results = () => {
         
         toast.success("Analysis refreshed", {
           description: "Your crop recommendations have been updated",
+        });
+      } else {
+        // API returned empty result, keep current recommendations if they exist
+        toast.warning("Could not refresh recommendations", {
+          description: "There was an issue connecting to our AI service. Your current recommendations remain unchanged.",
         });
       }
     } catch (err) {

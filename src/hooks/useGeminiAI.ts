@@ -50,8 +50,9 @@ export const useGeminiAI = () => {
     setError(null);
 
     try {
+      // Updated API URL to use the correct Gemini API version (v1 instead of v1beta)
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${API_KEY}`,
         {
           method: "POST",
           headers: {
@@ -116,20 +117,48 @@ export const useGeminiAI = () => {
       );
 
       if (!response.ok) {
-        throw new Error(`AI request failed: ${response.statusText}`);
+        // Improved error handling with more details
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData ? 
+          `AI request failed: ${errorData.error?.message || response.statusText}` : 
+          `AI request failed: ${response.statusText}`;
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
-      const textContent = result.candidates[0].content.parts[0].text;
       
-      // Extract the JSON part from the response text
-      const jsonMatch = textContent.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("Failed to parse AI response as JSON");
+      // Log the response structure to help with debugging
+      console.log("Gemini API response structure:", JSON.stringify(result, null, 2));
+      
+      // Parse response - updated to handle the new Gemini API v1 response format
+      let parsedResponse: GeminiResponse;
+      
+      try {
+        // First, get the text content from the response
+        const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!textContent) {
+          throw new Error("Empty response from AI service");
+        }
+        
+        // Extract the JSON part from the response text
+        const jsonMatch = textContent.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error("Failed to parse AI response as JSON");
+        }
+        
+        parsedResponse = JSON.parse(jsonMatch[0]) as GeminiResponse;
+        
+        // Validate the response structure
+        if (!parsedResponse.crops || !Array.isArray(parsedResponse.crops) || parsedResponse.crops.length === 0) {
+          throw new Error("Invalid crop recommendations format");
+        }
+        
+        return parsedResponse;
+      } catch (parseError) {
+        console.error("Error parsing Gemini response:", parseError);
+        throw new Error("Failed to parse crop recommendations");
       }
-      
-      const parsedResponse = JSON.parse(jsonMatch[0]) as GeminiResponse;
-      return parsedResponse;
     } catch (err: any) {
       const errorMessage = err.message || "Failed to get crop recommendations";
       setError(errorMessage);
