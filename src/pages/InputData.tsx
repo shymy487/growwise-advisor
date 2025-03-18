@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -26,14 +25,14 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import { useFarmData } from "@/contexts/FarmDataContext";
+import { useFarmData, NewFarmProfile } from "@/contexts/FarmDataContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import LocationMap from "@/components/LocationMap";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { MapPin, Leaf, Droplets, Calculator, DollarSign, Clock } from "lucide-react";
 
-// Form schema
+// Form schema with required fields matching NewFarmProfile
 const formSchema = z.object({
   name: z.string().min(2, { message: "Farm name must be at least 2 characters" }),
   location: z.object({
@@ -111,7 +110,21 @@ const InputData = () => {
   const onSubmit = async (data: FormValues) => {
     setIsSubmitting(true);
     try {
-      const profileId = await saveFarmProfile(data);
+      // Make sure we're submitting a fully validated form to match the NewFarmProfile type
+      const profileData: NewFarmProfile = {
+        name: data.name,
+        location: data.location,
+        landSize: data.landSize,
+        soilType: data.soilType,
+        waterAvailability: data.waterAvailability,
+        budget: data.budget,
+        farmingPriority: data.farmingPriority,
+        experience: data.experience,
+        previousCrop: data.previousCrop,
+        notes: data.notes,
+      };
+      
+      const profileId = await saveFarmProfile(profileData);
       navigate(`/results?profile=${profileId}`);
     } finally {
       setIsSubmitting(false);

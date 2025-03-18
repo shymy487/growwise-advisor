@@ -22,11 +22,14 @@ export interface FarmProfile {
   recommendations?: any[];
 }
 
+// Define what's required when creating a new profile
+export type NewFarmProfile = Omit<FarmProfile, "id" | "createdAt" | "recommendations">;
+
 interface FarmDataContextType {
   farmProfiles: FarmProfile[];
   currentProfile: FarmProfile | null;
   loading: boolean;
-  saveFarmProfile: (profile: Omit<FarmProfile, "id" | "createdAt">) => Promise<string>;
+  saveFarmProfile: (profile: NewFarmProfile) => Promise<string>;
   getFarmProfile: (id: string) => FarmProfile | null;
   updateFarmProfile: (id: string, data: Partial<FarmProfile>) => Promise<void>;
   deleteFarmProfile: (id: string) => Promise<void>;
@@ -69,7 +72,7 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [farmProfiles]);
 
-  const saveFarmProfile = async (profile: Omit<FarmProfile, "id" | "createdAt">) => {
+  const saveFarmProfile = async (profile: NewFarmProfile) => {
     setLoading(true);
     try {
       // Generate ID and timestamps
