@@ -32,6 +32,8 @@ export interface CropRecommendation {
   waterRequirements: string;
   soilCompatibility: string[];
   isTopPick: boolean;
+  maturityPeriod: string; // Added maturity period field
+  bestPlantingTime?: string; // Added best planting time field
 }
 
 interface GeminiResponse {
@@ -85,6 +87,8 @@ export const useGeminiAI = () => {
                           "growthPeriod": "Duration in weeks/months",
                           "waterRequirements": "Description of water needs",
                           "soilCompatibility": ["soil type 1", "soil type 2"],
+                          "maturityPeriod": "Time from planting to harvest (e.g., 90-120 days)",
+                          "bestPlantingTime": "Optimal planting season or months for this location",
                           "isTopPick": Boolean (true for the most recommended crop)
                         }
                       ],
@@ -92,7 +96,9 @@ export const useGeminiAI = () => {
                     }
                     
                     Ensure the crops are appropriate for the location's climate, the provided soil type, and water availability.
-                    Consider profitability based on typical market prices and yields. 
+                    Consider profitability based on typical market prices and yields.
+                    For maturityPeriod, provide specific time frames in days or months.
+                    For bestPlantingTime, consider the geographic location and local climate patterns.
                     Factor in the farmer's budget constraints and priorities (profit vs sustainability).
                     The sum of scores across all crops should add up to approximately 400.`
                   }

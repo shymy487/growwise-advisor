@@ -30,6 +30,7 @@ import { useFarmData, NewFarmProfile } from "@/contexts/FarmDataContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import LocationMap from "@/components/LocationMap";
+import LocationSearch from "@/components/LocationSearch";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { MapPin, Leaf, Droplets, Calculator, DollarSign, Clock } from "lucide-react";
 
@@ -248,6 +249,27 @@ const InputData = () => {
                             </FormControl>
                             <FormDescription>
                               Give your farm profile a name or describe its location
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="location.name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Search Location</FormLabel>
+                            <FormControl>
+                              <LocationSearch 
+                                value={field.value} 
+                                onChange={field.onChange}
+                                onLocationSelect={onLocationSelect}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Type to search for your location or use the detect button
                             </FormDescription>
                             <FormMessage />
                           </FormItem>

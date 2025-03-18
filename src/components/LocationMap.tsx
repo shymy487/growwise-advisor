@@ -1,7 +1,8 @@
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface LocationMapProps {
   className?: string;
@@ -14,6 +15,7 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [map, setMap] = useState<any>(null);
   const [marker, setMarker] = useState<any>(null);
+  const [locatingUser, setLocatingUser] = useState(false);
 
   useEffect(() => {
     // Load Leaflet dynamically
@@ -74,6 +76,9 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
         setMarker(markerInstance);
         setLoading(false);
         
+        // Try to get user's location automatically
+        getUserLocation(mapInstance, markerInstance);
+        
       } catch (error) {
         console.error("Error loading map:", error);
         setLoadError("Failed to load map. Please try again later.");
@@ -90,6 +95,62 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
       }
     };
   }, [onLocationSelect]);
+  
+  // Function to get user's location using browser's geolocation API
+  const getUserLocation = async (mapInstance: any, markerInstance: any) => {
+    if (!mapInstance || !markerInstance) return;
+    
+    setLocatingUser(true);
+    
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          
+          // Update map view and marker position
+          mapInstance.setView([latitude, longitude], 13);
+          markerInstance.setLatLng([latitude, longitude]);
+          
+          // Reverse geocode to get address
+          const address = await reverseGeocode(latitude, longitude);
+          
+          if (onLocationSelect) {
+            onLocationSelect({ 
+              lat: latitude, 
+              lng: longitude, 
+              address 
+            });
+          }
+          
+          toast.success("Location detected", {
+            description: "Your current location has been detected and set on the map.",
+          });
+          
+          setLocatingUser(false);
+        },
+        (error) => {
+          console.error("Error getting user location:", error);
+          toast.error("Location detection failed", {
+            description: "Please manually set your location on the map.",
+          });
+          setLocatingUser(false);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    } else {
+      toast.error("Geolocation not supported", {
+        description: "Your browser doesn't support location services.",
+      });
+      setLocatingUser(false);
+    }
+  };
+  
+  // Manual trigger for location detection
+  const handleDetectLocation = () => {
+    if (map && marker) {
+      getUserLocation(map, marker);
+    }
+  };
   
   // Function to reverse geocode coordinates to address
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
@@ -132,8 +193,25 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
         className="h-full w-full"
       />
       
-      <div className="absolute bottom-2 left-2 right-2 z-10 text-xs text-muted-foreground bg-white/80 backdrop-blur-sm rounded p-2">
-        Click on the map or drag the marker to set your farm location
+      <div className="absolute bottom-2 left-2 right-2 z-10 text-xs text-muted-foreground bg-white/80 backdrop-blur-sm rounded p-2 flex justify-between items-center">
+        <span>Click on the map or drag the marker to set your farm location</span>
+        <button
+          onClick={handleDetectLocation}
+          disabled={locatingUser}
+          className="flex items-center gap-1 text-xs bg-crop-primary text-white px-2 py-1 rounded hover:bg-crop-primary/90 transition-colors"
+        >
+          {locatingUser ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Detecting...</span>
+            </>
+          ) : (
+            <>
+              <MapPin className="h-3 w-3" />
+              <span>Detect my location</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
