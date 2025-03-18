@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -113,7 +114,11 @@ const InputData = () => {
       // Make sure we're submitting a fully validated form to match the NewFarmProfile type
       const profileData: NewFarmProfile = {
         name: data.name,
-        location: data.location,
+        location: {
+          name: data.location.name,
+          lat: data.location.lat,
+          lng: data.location.lng,
+        },
         landSize: data.landSize,
         soilType: data.soilType,
         waterAvailability: data.waterAvailability,
