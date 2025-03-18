@@ -4,6 +4,21 @@ import { Loader2, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+// Add these imports to fix the missing marker icons
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// Fix Leaflet's default icon path issues
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
+
 interface LocationMapProps {
   className?: string;
   onLocationSelect?: (location: { lat: number; lng: number; address: string }) => void;
@@ -11,26 +26,43 @@ interface LocationMapProps {
 
 const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [map, setMap] = useState<any>(null);
-  const [marker, setMarker] = useState<any>(null);
   const [locatingUser, setLocatingUser] = useState(false);
 
+  // Function to reverse geocode coordinates to address
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      );
+      const data = await response.json();
+      return data.display_name || "Unknown location";
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return "Unknown location";
+    }
+  };
+
   useEffect(() => {
-    // Load Leaflet dynamically
-    const loadLeaflet = async () => {
+    // Load Leaflet map
+    const initializeMap = async () => {
       try {
         setLoading(true);
         
-        // Import leaflet dynamically to avoid SSR issues
-        const L = await import('leaflet');
-        await import('leaflet/dist/leaflet.css');
-        
-        // Create map instance if container exists
+        // Check if container exists
         if (!mapContainerRef.current) return;
         
-        // Initialize map with a default view (Kenya)
+        // Clean up previous map instance if it exists
+        if (mapInstanceRef.current) {
+          console.log("Cleaning up previous map instance");
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+        }
+        
+        // Create a new map instance with a default view (Kenya)
         const mapInstance = L.map(mapContainerRef.current).setView([0.0236, 37.9062], 6);
         
         // Add tile layer (OpenStreetMap)
@@ -72,11 +104,11 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
         });
         
         // Store references
-        setMap(mapInstance);
-        setMarker(markerInstance);
+        mapInstanceRef.current = mapInstance;
+        markerRef.current = markerInstance;
         setLoading(false);
         
-        // Try to get user's location automatically
+        // Try to get user's location
         getUserLocation(mapInstance, markerInstance);
         
       } catch (error) {
@@ -86,15 +118,20 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
       }
     };
     
-    loadLeaflet();
+    initializeMap();
     
-    // Cleanup
+    // Cleanup function
     return () => {
-      if (map) {
-        map.remove();
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+        } catch (error) {
+          console.error("Error cleaning up map:", error);
+        }
       }
     };
-  }, [onLocationSelect]);
+  }, []); // Empty dependency array to run only on mount
   
   // Function to get user's location using browser's geolocation API
   const getUserLocation = async (mapInstance: any, markerInstance: any) => {
@@ -147,22 +184,8 @@ const LocationMap = ({ className, onLocationSelect }: LocationMapProps) => {
   
   // Manual trigger for location detection
   const handleDetectLocation = () => {
-    if (map && marker) {
-      getUserLocation(map, marker);
-    }
-  };
-  
-  // Function to reverse geocode coordinates to address
-  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-      );
-      const data = await response.json();
-      return data.display_name || "Unknown location";
-    } catch (error) {
-      console.error("Geocoding error:", error);
-      return "Unknown location";
+    if (mapInstanceRef.current && markerRef.current) {
+      getUserLocation(mapInstanceRef.current, markerRef.current);
     }
   };
 

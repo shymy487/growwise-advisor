@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface LocationSearchProps {
   value: string;
@@ -69,6 +70,9 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
     } catch (error) {
       console.error("Error searching locations:", error);
       setSuggestions([]);
+      toast.error("Location search failed", {
+        description: "Unable to search for locations. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -97,23 +101,40 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
             const response = await fetch(
               `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
             );
+            
+            if (!response.ok) throw new Error('Reverse geocoding failed');
+            
             const data = await response.json();
             const address = data.display_name || "Unknown location";
             
             setQuery(address);
             onChange(address);
             onLocationSelect({ lat: latitude, lng: longitude, address });
+            toast.success("Location detected", {
+              description: "Your current location has been detected.",
+            });
           } catch (error) {
             console.error("Error reverse geocoding:", error);
+            toast.error("Location detection failed", {
+              description: "Could not determine your location. Please try manual search.",
+            });
           } finally {
             setLoading(false);
           }
         },
         (error) => {
           console.error("Error getting user location:", error);
+          toast.error("Location detection failed", {
+            description: error.message || "Please manually search for your location.",
+          });
           setLoading(false);
-        }
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
+    } else {
+      toast.error("Geolocation not supported", {
+        description: "Your browser doesn't support location services.",
+      });
     }
   };
 
