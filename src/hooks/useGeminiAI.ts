@@ -49,7 +49,7 @@ export const useGeminiAI = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2; // Reduced retries since we also have retries in the Edge Function
 
   const getCropRecommendations = async (farmData: FarmData): Promise<GeminiResponse | null> => {
     setLoading(true);
@@ -77,43 +77,68 @@ export const useGeminiAI = () => {
         }
       }
       
-      // Call our Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('gemini-crop-advisor', {
-        body: farmData,
-      });
+      // Call our Supabase Edge Function with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
-      if (error) {
-        console.error("Supabase Edge Function error:", error);
+      try {
+        const { data, error } = await supabase.functions.invoke('gemini-crop-advisor', {
+          body: farmData,
+          signal: controller.signal,
+        });
         
-        if (retryCount < MAX_RETRIES) {
-          setRetryCount(prev => prev + 1);
-          const delay = Math.pow(2, retryCount) * 1000;
-          toast.warning("Retrying analysis...", {
-            description: `The server is busy. Retrying in ${delay/1000} seconds.`,
-          });
-          await new Promise(resolve => setTimeout(resolve, delay));
-          return getCropRecommendations(farmData);
+        clearTimeout(timeoutId);
+        
+        if (error) {
+          console.error("Supabase Edge Function error:", error);
+          
+          if (retryCount < MAX_RETRIES) {
+            setRetryCount(prev => prev + 1);
+            const delay = Math.pow(2, retryCount) * 1000;
+            toast.warning("Retrying analysis...", {
+              description: `The server is busy. Retrying in ${delay/1000} seconds.`,
+            });
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return getCropRecommendations(farmData);
+          }
+          
+          throw new Error(`Failed to analyze farm data: ${error.message}`);
         }
         
-        throw new Error(`Failed to analyze farm data: ${error.message}`);
+        // Reset retry count on success
+        setRetryCount(0);
+        console.log("Edge function response:", data);
+        
+        // Validate the response
+        if (!data.categories || !Array.isArray(data.categories)) {
+          throw new Error("Invalid response format from server");
+        }
+        
+        return data as GeminiResponse;
+      } catch (fetchError) {
+        if (fetchError.name === 'AbortError') {
+          throw new Error("Request timed out. Please try again.");
+        }
+        throw fetchError;
       }
-      
-      // Reset retry count on success
-      setRetryCount(0);
-      console.log("Edge function response:", data);
-      
-      // Validate the response
-      if (!data.categories || !Array.isArray(data.categories)) {
-        throw new Error("Invalid response format from server");
-      }
-      
-      return data as GeminiResponse;
     } catch (err: any) {
       const errorMessage = err.message || "Failed to get crop recommendations";
       setError(errorMessage);
+      
+      // Customize error message based on error type
+      let description = "Please try again or check your network connection.";
+      if (errorMessage.includes("timed out")) {
+        description = "The server took too long to respond. Please try again.";
+      } else if (errorMessage.includes("network") || errorMessage.includes("connection")) {
+        description = "Please check your internet connection and try again.";
+      } else if (errorMessage.includes("API")) {
+        description = "There was an issue with our AI service. We're working to fix it.";
+      }
+      
       toast.error("Error analyzing farm data", {
-        description: errorMessage,
+        description: description,
       });
+      
       console.error("AI recommendation error:", err);
       return null;
     } finally {
