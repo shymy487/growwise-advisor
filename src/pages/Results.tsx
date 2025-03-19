@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFarmData, FarmProfile } from "@/contexts/FarmDataContext";
-import { useGeminiAI, CropRecommendation } from "@/hooks/useGeminiAI";
+import { useGeminiAI, CropRecommendation, CropCategory } from "@/hooks/useGeminiAI";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CropCard from "@/components/CropCard";
@@ -21,45 +22,61 @@ import { ArrowLeft, FileDown, Share2, RefreshCw, PenLine } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
-const MOCK_CROP_RECOMMENDATIONS: CropRecommendation[] = [
+// Sample data structure for categorized crops
+const MOCK_CROP_CATEGORIES: CropCategory[] = [
   {
-    name: "Sample Crop 1",
-    description: "This is a sample crop recommendation for demonstration purposes when the API is unavailable.",
-    estimatedProfit: 1200,
-    marketPrice: 4.5,
-    score: 95,
-    growthPeriod: "3-4 months",
-    waterRequirements: "Medium, about 15-20 inches during growing season",
-    soilCompatibility: ["Loamy", "Clay Loam"],
-    isTopPick: true,
-    maturityPeriod: "90-120 days",
-    bestPlantingTime: "Spring to early Summer"
+    type: "Cereals & Grains",
+    crops: [
+      {
+        name: "Sample Wheat",
+        description: "This is a sample grain crop recommendation for demonstration purposes when the API is unavailable.",
+        estimatedProfit: 1200,
+        marketPrice: 4.5,
+        score: 95,
+        growthPeriod: "3-4 months",
+        waterRequirements: "Medium, about 15-20 inches during growing season",
+        soilCompatibility: ["Loamy", "Clay Loam"],
+        isTopPick: true,
+        maturityPeriod: "90-120 days",
+        bestPlantingTime: "Spring to early Summer"
+      }
+    ]
   },
   {
-    name: "Sample Crop 2",
-    description: "Another sample crop for demonstration. In normal conditions, the AI would analyze your specific farm data.",
-    estimatedProfit: 950,
-    marketPrice: 3.2,
-    score: 85,
-    growthPeriod: "2-3 months",
-    waterRequirements: "Low to medium, drought resistant",
-    soilCompatibility: ["Sandy Loam", "Loamy"],
-    isTopPick: false,
-    maturityPeriod: "60-80 days",
-    bestPlantingTime: "Early to mid Spring"
+    type: "Legumes & Pulses",
+    crops: [
+      {
+        name: "Sample Soybean",
+        description: "A sample legume for demonstration. In normal conditions, the AI would analyze your specific farm data.",
+        estimatedProfit: 950,
+        marketPrice: 3.2,
+        score: 85,
+        growthPeriod: "2-3 months",
+        waterRequirements: "Low to medium, drought resistant",
+        soilCompatibility: ["Sandy Loam", "Loamy"],
+        isTopPick: true,
+        maturityPeriod: "60-80 days",
+        bestPlantingTime: "Early to mid Spring"
+      }
+    ]
   },
   {
-    name: "Sample Crop 3",
-    description: "Third example crop. The actual recommendations would be tailored to your location and conditions.",
-    estimatedProfit: 1100,
-    marketPrice: 5.0,
-    score: 80,
-    growthPeriod: "4-5 months",
-    waterRequirements: "High, regular irrigation needed",
-    soilCompatibility: ["Rich Loam", "Clay Loam"],
-    isTopPick: false,
-    maturityPeriod: "110-140 days",
-    bestPlantingTime: "Late Spring"
+    type: "Vegetables",
+    crops: [
+      {
+        name: "Sample Tomato",
+        description: "Third example crop. The actual recommendations would be tailored to your location and conditions.",
+        estimatedProfit: 1100,
+        marketPrice: 5.0,
+        score: 80,
+        growthPeriod: "4-5 months",
+        waterRequirements: "High, regular irrigation needed",
+        soilCompatibility: ["Rich Loam", "Clay Loam"],
+        isTopPick: true,
+        maturityPeriod: "110-140 days",
+        bestPlantingTime: "Late Spring"
+      }
+    ]
   }
 ];
 
@@ -71,10 +88,11 @@ const Results = () => {
   const navigate = useNavigate();
   
   const [farmProfile, setFarmProfile] = useState<FarmProfile | null>(null);
-  const [recommendations, setRecommendations] = useState<CropRecommendation[]>([]);
+  const [cropCategories, setCropCategories] = useState<CropCategory[]>([]);
   const [reasoning, setReasoning] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const profileId = searchParams.get("profile");
 
@@ -89,9 +107,12 @@ const Results = () => {
           setFarmProfile(profile);
           
           // Check if profile already has recommendations
-          if (profile.recommendations && profile.recommendations.length > 0) {
-            setRecommendations(profile.recommendations);
-            setReasoning("Recommendations loaded from previous analysis.");
+          if (profile.categories && profile.categories.length > 0) {
+            setCropCategories(profile.categories);
+            setReasoning(profile.reasoning || "Recommendations loaded from previous analysis.");
+            if (profile.categories.length > 0) {
+              setActiveCategory(profile.categories[0].type);
+            }
             setLoading(false);
             return;
           }
@@ -111,20 +132,23 @@ const Results = () => {
               notes: profile.notes,
             });
             
-            if (result && result.crops && result.crops.length > 0) {
-              setRecommendations(result.crops);
+            if (result && result.categories && result.categories.length > 0) {
+              setCropCategories(result.categories);
               setReasoning(result.reasoning);
+              setActiveCategory(result.categories[0].type);
               
               // Save recommendations to profile
               await updateFarmProfile(profile.id, {
-                recommendations: result.crops,
+                categories: result.categories,
+                reasoning: result.reasoning,
               });
             } else {
               // API returned empty or invalid result, use fallback
               toast.warning("Using sample recommendations", {
                 description: "We're having trouble connecting to our AI service. Showing sample data instead.",
               });
-              setRecommendations(MOCK_CROP_RECOMMENDATIONS);
+              setCropCategories(MOCK_CROP_CATEGORIES);
+              setActiveCategory(MOCK_CROP_CATEGORIES[0].type);
               setReasoning("Sample data displayed due to AI service connection issues. Please try again later for personalized recommendations.");
             }
           } catch (err) {
@@ -134,7 +158,8 @@ const Results = () => {
             });
             
             // Use fallback data
-            setRecommendations(MOCK_CROP_RECOMMENDATIONS);
+            setCropCategories(MOCK_CROP_CATEGORIES);
+            setActiveCategory(MOCK_CROP_CATEGORIES[0].type);
             setReasoning("Sample data displayed due to AI service connection issues. Please try again later for personalized recommendations.");
           } finally {
             setAnalyzing(false);
@@ -177,13 +202,15 @@ const Results = () => {
         notes: farmProfile.notes,
       });
       
-      if (result && result.crops && result.crops.length > 0) {
-        setRecommendations(result.crops);
+      if (result && result.categories && result.categories.length > 0) {
+        setCropCategories(result.categories);
         setReasoning(result.reasoning);
+        setActiveCategory(result.categories[0].type);
         
         // Save recommendations to profile
         await updateFarmProfile(farmProfile.id, {
-          recommendations: result.crops,
+          categories: result.categories,
+          reasoning: result.reasoning,
         });
         
         toast.success("Analysis refreshed", {
@@ -206,10 +233,10 @@ const Results = () => {
   };
 
   const handleDownloadReport = () => {
-    if (!farmProfile || recommendations.length === 0) return;
+    if (!farmProfile || cropCategories.length === 0) return;
     
     try {
-      // Create report content
+      // Create report content with categories
       const reportContent = `
 Crop Recommendation Report
 Farm: ${farmProfile.name}
@@ -219,11 +246,13 @@ FARM DETAILS
 Location: ${farmProfile.location.name}
 Land Size: ${farmProfile.landSize} acres
 Soil Type: ${farmProfile.soilType}
-Water Availability: ${farmProfile.waterAvailability} inches/season
+Water Availability: ${farmProfile.waterAvailability}
 Budget: $${farmProfile.budget}/acre
 
-RECOMMENDED CROPS
-${recommendations.map((crop, index) => `
+RECOMMENDED CROPS BY CATEGORY
+${cropCategories.map((category) => `
+CATEGORY: ${category.type}
+${category.crops.map((crop, index) => `
 ${index + 1}. ${crop.name} ${crop.isTopPick ? '(Top Pick)' : ''}
    Score: ${crop.score}
    Estimated Profit: $${crop.estimatedProfit}/acre
@@ -232,6 +261,7 @@ ${index + 1}. ${crop.name} ${crop.isTopPick ? '(Top Pick)' : ''}
    Description: ${crop.description}
    Water Requirements: ${crop.waterRequirements}
    Soil Compatibility: ${crop.soilCompatibility.join(', ')}
+`).join('')}
 `).join('')}
 
 ANALYSIS SUMMARY
@@ -285,6 +315,10 @@ ${reasoning}
         });
     }
   };
+
+  // Find crops for the active category
+  const activeCategoryData = cropCategories.find(cat => cat.type === activeCategory);
+  const activeCrops = activeCategoryData?.crops || [];
 
   if (loading || !farmProfile) {
     return (
@@ -346,7 +380,7 @@ ${reasoning}
                   size="sm"
                   className="bg-crop-primary hover:bg-crop-primary/90"
                   onClick={handleDownloadReport}
-                  disabled={analyzing || recommendations.length === 0}
+                  disabled={analyzing || cropCategories.length === 0}
                 >
                   <FileDown className="h-4 w-4 mr-2" />
                   Save Results
@@ -377,7 +411,13 @@ ${reasoning}
                   
                   <div>
                     <div className="text-sm text-muted-foreground">Water Availability</div>
-                    <div className="font-medium">{farmProfile.waterAvailability} inches/season</div>
+                    <div className="font-medium">{
+                      farmProfile.waterAvailability === "rainfed" ? "Rain-fed Farming" :
+                      farmProfile.waterAvailability === "basic-irrigation" ? "Basic Irrigation" :
+                      farmProfile.waterAvailability === "full-irrigation" ? "Full Irrigation" :
+                      farmProfile.waterAvailability === "limited" ? "Limited Water" :
+                      `${farmProfile.waterAvailability}`
+                    }</div>
                   </div>
                   
                   <div>
@@ -406,7 +446,7 @@ ${reasoning}
                 </p>
               </motion.div>
             </div>
-          ) : recommendations.length > 0 ? (
+          ) : cropCategories.length > 0 ? (
             <>
               <div className="mb-2 animate-fade-in">
                 <div className="flex items-center gap-1 text-sm text-muted-foreground mb-2">
@@ -419,31 +459,60 @@ ${reasoning}
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                {recommendations.map((crop, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.1 }}
-                  >
-                    <CropCard
-                      crop={{
-                        id: `crop-${index}`,
-                        name: crop.name,
-                        description: crop.description,
-                        estimatedProfit: crop.estimatedProfit,
-                        marketPrice: crop.marketPrice,
-                        score: crop.score,
-                        growthPeriod: crop.growthPeriod,
-                        waterRequirements: crop.waterRequirements,
-                        soilCompatibility: crop.soilCompatibility,
-                        isTopPick: crop.isTopPick,
-                      }}
-                    />
-                  </motion.div>
-                ))}
+              {/* Category tabs */}
+              <div className="mb-6 animate-fade-in overflow-x-auto">
+                <div className="flex space-x-2 min-w-max pb-2">
+                  {cropCategories.map((category, index) => (
+                    <Button
+                      key={index}
+                      variant={activeCategory === category.type ? "default" : "outline"}
+                      className={activeCategory === category.type ? "bg-crop-primary hover:bg-crop-primary/90" : ""}
+                      size="sm"
+                      onClick={() => setActiveCategory(category.type)}
+                    >
+                      {category.type}
+                      {category.crops.length > 0 && (
+                        <span className="ml-1.5 rounded-full bg-white/20 px-1.5 text-xs">
+                          {category.crops.length}
+                        </span>
+                      )}
+                    </Button>
+                  ))}
+                </div>
               </div>
+              
+              {/* Display crops for active category */}
+              {activeCrops.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                  {activeCrops.map((crop, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                    >
+                      <CropCard
+                        crop={{
+                          id: `crop-${index}`,
+                          name: crop.name,
+                          description: crop.description,
+                          estimatedProfit: crop.estimatedProfit,
+                          marketPrice: crop.marketPrice,
+                          score: crop.score,
+                          growthPeriod: crop.growthPeriod,
+                          waterRequirements: crop.waterRequirements,
+                          soilCompatibility: crop.soilCompatibility,
+                          isTopPick: crop.isTopPick,
+                        }}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-muted/30 rounded-lg mb-8">
+                  <p className="text-muted-foreground">No crops found in this category for your farm conditions.</p>
+                </div>
+              )}
               
               <div className="animate-fade-in">
                 <Card>

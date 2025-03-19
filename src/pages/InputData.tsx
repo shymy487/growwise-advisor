@@ -23,7 +23,9 @@ import { useFarmData, NewFarmProfile, FarmProfile } from "@/contexts/FarmDataCon
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import LocationSearch from "@/components/LocationSearch";
+import LocationCoordinates from "@/components/LocationCoordinates";
 import SoilTypeSelector from "@/components/SoilTypeSelector";
+import WaterAvailabilitySelector from "@/components/WaterAvailabilitySelector";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { MapPin, Leaf, Droplets, Calculator, DollarSign, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -38,7 +40,7 @@ const formSchema = z.object({
   }),
   landSize: z.coerce.number().min(0.1, { message: "Land size must be greater than 0.1 acres" }),
   soilType: z.string().min(1, { message: "Please select a soil type" }),
-  waterAvailability: z.number().min(0, { message: "Water availability must be 0 or greater" }),
+  waterAvailability: z.string().min(1, { message: "Water availability is required" }),
   budget: z.coerce.number().min(10, { message: "Budget must be at least $10" }),
   farmingPriority: z.enum(["profit", "balanced", "sustainability"]),
   experience: z.number().optional(),
@@ -69,7 +71,7 @@ const InputData = () => {
       },
       landSize: 10,
       soilType: "",
-      waterAvailability: 15,
+      waterAvailability: "rainfed", // Default to rain-fed farming
       budget: 1000,
       farmingPriority: "balanced",
       experience: 1,
@@ -119,6 +121,15 @@ const InputData = () => {
       name: location.address,
       lat: location.lat,
       lng: location.lng,
+    });
+  };
+
+  const onCoordinatesChange = (lat: number, lng: number) => {
+    const currentLocation = form.getValues("location");
+    form.setValue("location", {
+      ...currentLocation,
+      lat,
+      lng,
     });
   };
 
@@ -329,6 +340,21 @@ const InputData = () => {
                         )}
                       />
                       
+                      {/* Location coordinates */}
+                      {form.getValues().location.lat !== 0 && form.getValues().location.lng !== 0 && (
+                        <FormItem>
+                          <FormLabel>Precise Coordinates</FormLabel>
+                          <FormControl>
+                            <LocationCoordinates
+                              latitude={form.getValues().location.lat}
+                              longitude={form.getValues().location.lng}
+                              onCoordinatesChange={onCoordinatesChange}
+                              className="border-0 shadow-none"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                      
                       <FormField
                         control={form.control}
                         name="landSize"
@@ -408,32 +434,13 @@ const InputData = () => {
                         name="waterAvailability"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Water Availability (inches per season)</FormLabel>
-                            <div className="space-y-4">
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Low</span>
-                                <span>Moderate</span>
-                                <span>High</span>
-                              </div>
-                              <FormControl>
-                                <div className="flex items-center gap-4">
-                                  <Slider
-                                    min={0}
-                                    max={40}
-                                    step={1}
-                                    defaultValue={[field.value]}
-                                    onValueChange={(value) => field.onChange(value[0])}
-                                    className="flex-1"
-                                  />
-                                  <span className="font-medium text-sm min-w-16 text-right">
-                                    {field.value} inches
-                                  </span>
-                                </div>
-                              </FormControl>
-                            </div>
-                            <FormDescription>
-                              This includes rainfall and irrigation capabilities
-                            </FormDescription>
+                            <FormLabel>Water Availability</FormLabel>
+                            <FormControl>
+                              <WaterAvailabilitySelector
+                                value={field.value}
+                                onChange={field.onChange}
+                              />
+                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
