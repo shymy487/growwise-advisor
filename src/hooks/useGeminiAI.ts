@@ -12,8 +12,8 @@ export interface FarmData {
   };
   landSize: number;
   soilType: string;
-  waterAvailability: string; // Now this can be descriptive
-  waterAvailabilityInches?: number; // Optional numerical value
+  waterAvailability: string; // Now just using descriptive strings
+  waterAvailabilityInches?: number; // Optional numerical value for internal use
   budget: number;
   farmingPriority: "profit" | "balanced" | "sustainability";
   experience?: number;
@@ -58,13 +58,14 @@ export const useGeminiAI = () => {
     try {
       console.log("Calling Supabase Edge Function with farm data:", farmData);
       
-      // Convert numeric water availability to descriptive terms if needed
-      if (typeof farmData.waterAvailability === 'number' || /^\d+$/.test(farmData.waterAvailability)) {
-        const inches = Number(farmData.waterAvailability);
+      // No need to convert water availability if it's already a string
+      // If somehow a number is passed, convert it to a string
+      if (typeof farmData.waterAvailability === 'number') {
         // Store the numeric value
-        farmData.waterAvailabilityInches = inches;
+        farmData.waterAvailabilityInches = farmData.waterAvailability as unknown as number;
         
         // Convert to descriptive term
+        const inches = Number(farmData.waterAvailability);
         if (inches < 10) {
           farmData.waterAvailability = "limited";
         } else if (inches < 15) {

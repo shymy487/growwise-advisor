@@ -1,6 +1,6 @@
-
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner";
+import { CropCategory } from "@/hooks/useGeminiAI";
 
 export interface FarmProfile {
   id: string;
@@ -12,18 +12,18 @@ export interface FarmProfile {
   };
   landSize: number;
   soilType: string;
-  waterAvailability: number;
+  waterAvailability: string;
   budget: number;
   farmingPriority: "profit" | "balanced" | "sustainability";
   experience?: number;
   previousCrop?: string;
   notes?: string;
   createdAt: Date;
-  recommendations?: any[];
+  categories?: CropCategory[];
+  reasoning?: string;
 }
 
-// Define what's required when creating a new profile
-export type NewFarmProfile = Omit<FarmProfile, "id" | "createdAt" | "recommendations">;
+export type NewFarmProfile = Omit<FarmProfile, "id" | "createdAt" | "categories" | "reasoning">;
 
 interface FarmDataContextType {
   farmProfiles: FarmProfile[];
@@ -43,7 +43,6 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
   const [currentProfile, setCurrentProfile] = useState<FarmProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load profiles from localStorage on init
   useEffect(() => {
     const storedProfiles = localStorage.getItem("farmProfiles");
     if (storedProfiles) {
@@ -51,7 +50,6 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
         const parsed = JSON.parse(storedProfiles);
         setFarmProfiles(parsed);
         
-        // Set the most recent profile as current if available
         if (parsed.length > 0) {
           const sorted = [...parsed].sort((a, b) => 
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -65,7 +63,6 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   }, []);
 
-  // Save profiles to localStorage whenever they change
   useEffect(() => {
     if (farmProfiles.length > 0) {
       localStorage.setItem("farmProfiles", JSON.stringify(farmProfiles));
@@ -75,14 +72,12 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
   const saveFarmProfile = async (profile: NewFarmProfile) => {
     setLoading(true);
     try {
-      // Generate ID and timestamps
       const newProfile: FarmProfile = {
         ...profile,
         id: "farm-" + Math.random().toString(36).substr(2, 9),
         createdAt: new Date(),
       };
       
-      // Add to state
       setFarmProfiles(prev => [...prev, newProfile]);
       setCurrentProfile(newProfile);
       
@@ -113,7 +108,6 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
       
       setFarmProfiles(updatedProfiles);
       
-      // Update current profile if it's the one being modified
       if (currentProfile?.id === id) {
         setCurrentProfile({ ...currentProfile, ...data });
       }
@@ -136,7 +130,6 @@ export const FarmDataProvider = ({ children }: { children: ReactNode }) => {
       const updatedProfiles = farmProfiles.filter(profile => profile.id !== id);
       setFarmProfiles(updatedProfiles);
       
-      // Clear current profile if it's the one being deleted
       if (currentProfile?.id === id) {
         setCurrentProfile(updatedProfiles.length > 0 ? updatedProfiles[0] : null);
       }

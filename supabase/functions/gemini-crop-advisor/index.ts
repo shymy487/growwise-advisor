@@ -19,7 +19,7 @@ interface FarmData {
   };
   landSize: number;
   soilType: string;
-  waterAvailability: string; // Now this will be a descriptive term not just a number
+  waterAvailability: string; // Now this will be a descriptive term
   waterAvailabilityInches?: number; // Calculated or provided inches
   budget: number;
   farmingPriority: "profit" | "balanced" | "sustainability";

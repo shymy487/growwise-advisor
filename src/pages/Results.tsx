@@ -124,7 +124,7 @@ const Results = () => {
               location: profile.location,
               landSize: profile.landSize,
               soilType: profile.soilType,
-              waterAvailability: profile.waterAvailability,
+              waterAvailability: profile.waterAvailability, // Now using string type for water availability
               budget: profile.budget,
               farmingPriority: profile.farmingPriority,
               experience: profile.experience,
@@ -141,7 +141,7 @@ const Results = () => {
               await updateFarmProfile(profile.id, {
                 categories: result.categories,
                 reasoning: result.reasoning,
-              });
+              } as Partial<FarmProfile>); // Type assertion to avoid property check
             } else {
               // API returned empty or invalid result, use fallback
               toast.warning("Using sample recommendations", {
@@ -194,7 +194,7 @@ const Results = () => {
         location: farmProfile.location,
         landSize: farmProfile.landSize,
         soilType: farmProfile.soilType,
-        waterAvailability: farmProfile.waterAvailability,
+        waterAvailability: farmProfile.waterAvailability, // Now using string type
         budget: farmProfile.budget,
         farmingPriority: farmProfile.farmingPriority,
         experience: farmProfile.experience,
@@ -211,7 +211,7 @@ const Results = () => {
         await updateFarmProfile(farmProfile.id, {
           categories: result.categories,
           reasoning: result.reasoning,
-        });
+        } as Partial<FarmProfile>); // Type assertion to avoid property check
         
         toast.success("Analysis refreshed", {
           description: "Your crop recommendations have been updated",
