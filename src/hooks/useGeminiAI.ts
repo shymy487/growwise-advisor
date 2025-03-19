@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -32,8 +31,8 @@ export interface CropRecommendation {
   waterRequirements: string;
   soilCompatibility: string[];
   isTopPick: boolean;
-  maturityPeriod: string; // Added maturity period field
-  bestPlantingTime?: string; // Added best planting time field
+  maturityPeriod: string;
+  bestPlantingTime?: string;
 }
 
 interface GeminiResponse {
@@ -44,15 +43,16 @@ interface GeminiResponse {
 export const useGeminiAI = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
 
   const getCropRecommendations = async (farmData: FarmData): Promise<GeminiResponse | null> => {
     setLoading(true);
     setError(null);
 
     try {
-      // Updated API URL to use the correct Gemini API version (v1 instead of v1beta)
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro/generateContent?key=${API_KEY}`,
         {
           method: "POST",
           headers: {
@@ -76,7 +76,7 @@ export const useGeminiAI = () => {
                     ${farmData.previousCrop ? `Previous crop: ${farmData.previousCrop}` : ''}
                     ${farmData.notes ? `Additional notes: ${farmData.notes}` : ''}
                     
-                    Return the response as a valid JSON object with the following structure:
+                    IMPORTANT: Your response MUST be a valid JSON object with the following structure:
                     {
                       "crops": [
                         {
@@ -96,18 +96,19 @@ export const useGeminiAI = () => {
                       "reasoning": "Brief explanation of the overall recommendation logic"
                     }
                     
-                    Ensure the crops are appropriate for the location's climate, the provided soil type, and water availability.
-                    Consider profitability based on typical market prices and yields.
-                    For maturityPeriod, provide specific time frames in days or months.
-                    For bestPlantingTime, consider the geographic location and local climate patterns.
+                    Do NOT include any text, explanations, or markdown outside of this JSON structure.
+                    Ensure the JSON is valid and complete with all fields.
+                    Make sure the crops are appropriate for the location's climate, soil type, and water availability.
+                    Consider profitability based on market prices and yields.
                     Factor in the farmer's budget constraints and priorities (profit vs sustainability).
-                    The sum of scores across all crops should add up to approximately 400.`
+                    Always designate exactly one crop as isTopPick: true and the rest as false.
+                    The sum of scores should be approximately 400.`
                   }
                 ]
               }
             ],
             generationConfig: {
-              temperature: 0.2,
+              temperature: 0.1,
               topK: 40,
               topP: 0.95,
               maxOutputTokens: 2048,
@@ -117,41 +118,62 @@ export const useGeminiAI = () => {
       );
 
       if (!response.ok) {
-        // Improved error handling with more details
         const errorData = await response.json().catch(() => null);
         const errorMessage = errorData ? 
           `AI request failed: ${errorData.error?.message || response.statusText}` : 
           `AI request failed: ${response.statusText}`;
+          
+        console.error("Gemini API HTTP Error:", errorMessage);
+        
+        if (retryCount < MAX_RETRIES && (response.status === 429 || response.status >= 500)) {
+          setRetryCount(prev => prev + 1);
+          const delay = Math.pow(2, retryCount) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return getCropRecommendations(farmData);
+        }
+        
         throw new Error(errorMessage);
       }
 
+      setRetryCount(0);
       const result = await response.json();
       
-      // Log the response structure to help with debugging
       console.log("Gemini API response structure:", JSON.stringify(result, null, 2));
       
-      // Parse response - updated to handle the new Gemini API v1 response format
-      let parsedResponse: GeminiResponse;
-      
       try {
-        // First, get the text content from the response
         const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         
         if (!textContent) {
           throw new Error("Empty response from AI service");
         }
         
-        // Extract the JSON part from the response text
         const jsonMatch = textContent.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
           throw new Error("Failed to parse AI response as JSON");
         }
         
-        parsedResponse = JSON.parse(jsonMatch[0]) as GeminiResponse;
+        const parsedResponse = JSON.parse(jsonMatch[0]) as GeminiResponse;
         
-        // Validate the response structure
         if (!parsedResponse.crops || !Array.isArray(parsedResponse.crops) || parsedResponse.crops.length === 0) {
           throw new Error("Invalid crop recommendations format");
+        }
+        
+        let hasTopPick = false;
+        for (const crop of parsedResponse.crops) {
+          if (crop.isTopPick) {
+            if (hasTopPick) {
+              crop.isTopPick = false;
+            } else {
+              hasTopPick = true;
+            }
+          }
+        }
+        
+        if (!hasTopPick && parsedResponse.crops.length > 0) {
+          const highestScoringCrop = parsedResponse.crops.reduce(
+            (prev, current) => (prev.score > current.score) ? prev : current
+          );
+          highestScoringCrop.isTopPick = true;
         }
         
         return parsedResponse;

@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, MapPin } from "lucide-react";
+import { Loader2, Search, MapPin, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -18,7 +18,9 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
   const [suggestions, setSuggestions] = useState<Array<{ display_name: string; lat: string; lon: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Update local query when value prop changes
   useEffect(() => {
@@ -91,7 +93,7 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
 
   const detectUserLocation = () => {
     if ('geolocation' in navigator) {
-      setLoading(true);
+      setDetectingLocation(true);
       
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -119,7 +121,7 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
               description: "Could not determine your location. Please try manual search.",
             });
           } finally {
-            setLoading(false);
+            setDetectingLocation(false);
           }
         },
         (error) => {
@@ -127,7 +129,7 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
           toast.error("Location detection failed", {
             description: error.message || "Please manually search for your location.",
           });
-          setLoading(false);
+          setDetectingLocation(false);
         },
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
@@ -138,32 +140,60 @@ const LocationSearch = ({ value, onChange, onLocationSelect, className }: Locati
     }
   };
 
+  const clearInput = () => {
+    setQuery('');
+    onChange('');
+    setShowSuggestions(false);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
   return (
     <div className={cn("relative", className)}>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Input
+            ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => query.length > 2 && setShowSuggestions(true)}
-            placeholder="Search for your farm location"
+            placeholder="Enter your farm location or city name"
             className="w-full pr-8"
           />
-          {loading ? (
-            <Loader2 className="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin" />
-          ) : (
-            <Search className="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          )}
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
+            {query ? (
+              <XCircle 
+                className="h-4.5 w-4.5 text-muted-foreground cursor-pointer hover:text-destructive"
+                onClick={clearInput}
+              />
+            ) : loading ? (
+              <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+            ) : (
+              <Search className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
         </div>
         <Button 
           type="button" 
-          size="icon" 
-          variant="outline" 
+          variant="default"
+          size="default" 
+          className="bg-crop-primary hover:bg-crop-primary/90 gap-1.5"
           onClick={detectUserLocation}
-          disabled={loading}
+          disabled={detectingLocation}
           title="Detect my location"
         >
-          <MapPin className="h-4 w-4" />
+          {detectingLocation ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="hidden sm:inline">Detecting...</span>
+            </>
+          ) : (
+            <>
+              <MapPin className="h-4 w-4" />
+              <span className="hidden sm:inline">Use My Location</span>
+            </>
+          )}
         </Button>
       </div>
       

@@ -1,6 +1,6 @@
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,22 +17,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import { useFarmData, NewFarmProfile } from "@/contexts/FarmDataContext";
+import { useFarmData, NewFarmProfile, FarmProfile } from "@/contexts/FarmDataContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import LocationMap from "@/components/LocationMap";
 import LocationSearch from "@/components/LocationSearch";
+import SoilTypeSelector from "@/components/SoilTypeSelector";
 import LoadingSpinner from "@/components/LoadingSpinner";
-import { MapPin, Leaf, Droplets, Calculator, DollarSign, Clock } from "lucide-react";
+import { MapPin, Leaf, Droplets, Calculator, DollarSign, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 
 // Form schema with required fields matching NewFarmProfile
 const formSchema = z.object({
@@ -56,11 +50,14 @@ type FormValues = z.infer<typeof formSchema>;
 
 const InputData = () => {
   const { isAuthenticated } = useAuth();
-  const { saveFarmProfile } = useFarmData();
+  const { saveFarmProfile, getFarmProfile, updateFarmProfile } = useFarmData();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editProfileId, setEditProfileId] = useState<string | null>(null);
   const navigate = useNavigate();
-
+  const [searchParams] = useSearchParams();
+  
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -80,6 +77,42 @@ const InputData = () => {
       notes: "",
     },
   });
+
+  // Check if we're editing an existing profile
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId) {
+      const profile = getFarmProfile(editId);
+      
+      if (profile) {
+        setIsEditing(true);
+        setEditProfileId(editId);
+        
+        // Pre-fill the form with existing data
+        form.reset({
+          name: profile.name,
+          location: profile.location,
+          landSize: profile.landSize,
+          soilType: profile.soilType,
+          waterAvailability: profile.waterAvailability,
+          budget: profile.budget,
+          farmingPriority: profile.farmingPriority,
+          experience: profile.experience,
+          previousCrop: profile.previousCrop || "",
+          notes: profile.notes || "",
+        });
+        
+        toast.info("Editing farm profile", {
+          description: "Update the information and submit to save changes"
+        });
+      } else {
+        toast.error("Profile not found", {
+          description: "The profile you're trying to edit doesn't exist"
+        });
+        navigate('/dashboard');
+      }
+    }
+  }, [searchParams, getFarmProfile, form, navigate]);
 
   const onLocationSelect = (location: { lat: number; lng: number; address: string }) => {
     form.setValue("location", {
@@ -130,27 +163,33 @@ const InputData = () => {
         notes: data.notes,
       };
       
-      const profileId = await saveFarmProfile(profileData);
+      let profileId: string;
+      
+      if (isEditing && editProfileId) {
+        // Update existing profile
+        await updateFarmProfile(editProfileId, profileData as Partial<FarmProfile>);
+        profileId = editProfileId;
+        toast.success("Farm profile updated", {
+          description: "Your farm profile has been successfully updated"
+        });
+      } else {
+        // Create new profile
+        profileId = await saveFarmProfile(profileData);
+        toast.success("Farm profile saved", {
+          description: "Your farm profile has been saved"
+        });
+      }
+      
       navigate(`/results?profile=${profileId}`);
+    } catch (error) {
+      console.error("Error saving farm profile:", error);
+      toast.error("Error saving farm profile", {
+        description: "Please try again"
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const soilTypes = [
-    "Loamy",
-    "Sandy",
-    "Clay",
-    "Silt",
-    "Peaty",
-    "Chalky",
-    "Sandy Loam",
-    "Clay Loam",
-    "Silty Clay",
-    "Rocky",
-    "Red Soil",
-    "Black Soil",
-  ];
 
   // Helper for step indicators
   const StepIndicator = ({ number, active, completed }: { number: number; active: boolean; completed: boolean }) => (
@@ -183,11 +222,25 @@ const InputData = () => {
       
       <main className="min-h-screen pt-24 pb-16 px-4 bg-crop-light/50">
         <div className="container mx-auto max-w-3xl">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2 animate-fade-in">Input Your Farm Details</h1>
-            <p className="text-muted-foreground animate-fade-in">
-              Tell us about your farm so we can provide you with tailored crop recommendations
-            </p>
+          <div className="mb-6">
+            <Button
+              onClick={() => navigate("/dashboard")}
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-1.5 mb-4 text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Button>
+            
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2 animate-fade-in">
+                {isEditing ? "Update Your Farm Details" : "Input Your Farm Details"}
+              </h1>
+              <p className="text-muted-foreground animate-fade-in">
+                Tell us about your farm so we can provide you with tailored crop recommendations
+              </p>
+            </div>
           </div>
           
           <Card className="border shadow-sm overflow-hidden animate-fade-in">
@@ -260,7 +313,7 @@ const InputData = () => {
                         name="location.name"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Search Location</FormLabel>
+                            <FormLabel>Farm Location</FormLabel>
                             <FormControl>
                               <LocationSearch 
                                 value={field.value} 
@@ -269,27 +322,7 @@ const InputData = () => {
                               />
                             </FormControl>
                             <FormDescription>
-                              Type to search for your location or use the detect button
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <FormField
-                        control={form.control}
-                        name="location"
-                        render={() => (
-                          <FormItem>
-                            <FormLabel>Pin Farm Location on Map</FormLabel>
-                            <FormControl>
-                              <LocationMap
-                                className="mt-1"
-                                onLocationSelect={onLocationSelect}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Click on the map or drag the marker to set your farm location
+                              Type to search for your location or use the "Use My Location" button
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
@@ -359,23 +392,12 @@ const InputData = () => {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Soil Type</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select soil type" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {soilTypes.map((type) => (
-                                  <SelectItem key={type} value={type}>
-                                    {type}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>
-                              Not sure? Loamy is a common soil type for agricultural lands
-                            </FormDescription>
+                            <FormControl>
+                              <SoilTypeSelector
+                                value={field.value}
+                                onChange={field.onChange}
+                              />
+                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -592,7 +614,11 @@ const InputData = () => {
                         className="bg-crop-primary hover:bg-crop-primary/90"
                         disabled={isSubmitting}
                       >
-                        {isSubmitting ? <LoadingSpinner size="sm" text="Submitting..." /> : "Get Recommendations"}
+                        {isSubmitting ? (
+                          <LoadingSpinner size="sm" text={isEditing ? "Updating..." : "Submitting..."} />
+                        ) : (
+                          isEditing ? "Update & Get Recommendations" : "Get Recommendations"
+                        )}
                       </Button>
                     )}
                   </div>
