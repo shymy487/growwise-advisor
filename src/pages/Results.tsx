@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFarmData, FarmProfile } from "@/contexts/FarmDataContext";
@@ -25,7 +26,8 @@ import {
   PenLine,
   BookmarkPlus,
   Bookmark,
-  Download
+  Download,
+  AlertTriangle
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -44,34 +46,57 @@ const Results = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  
+  const isMounted = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const profileId = searchParams.get("profile");
 
   useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchProfileAndRecommendations = async () => {
-      setLoading(true);
+      if (!isMounted.current) return;
       
-      // Find the requested profile
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
+      abortControllerRef.current = new AbortController();
+      setLoading(true);
+      setHasError(false);
+      
       if (profileId) {
         const profile = getFarmProfile(profileId);
         if (profile) {
           setFarmProfile(profile);
           
-          // Check if profile already has recommendations
           if (profile.categories && profile.categories.length > 0) {
             setCropCategories(profile.categories);
             setReasoning(profile.reasoning || "Recommendations loaded from previous analysis.");
             if (profile.categories.length > 0) {
               setActiveCategory(profile.categories[0].type);
             }
-            // Mark as saved since it was loaded from storage
             setSaved(true);
-            setLoading(false);
+            
+            if (isMounted.current) {
+              setLoading(false);
+            }
             return;
           }
           
-          // Get new recommendations
-          setAnalyzing(true);
+          if (isMounted.current) {
+            setAnalyzing(true);
+          }
+          
           try {
             const result = await getCropRecommendations({
               location: profile.location,
@@ -85,41 +110,52 @@ const Results = () => {
               notes: profile.notes,
             });
             
+            if (!isMounted.current) return;
+            
             if (result && result.categories && result.categories.length > 0) {
               setCropCategories(result.categories);
               setReasoning(result.reasoning);
               setActiveCategory(result.categories[0].type);
               
-              // Not saving automatically to allow user to decide
               setSaved(false);
             } else {
-              // API returned empty or invalid result
+              setHasError(true);
               toast.warning("Failed to get recommendations", {
                 description: "We're having trouble connecting to our AI service. Please try again later.",
               });
             }
           } catch (err) {
+            if (!isMounted.current) return;
+            
             console.error("Failed to get recommendations:", err);
+            setHasError(true);
             toast.error("Failed to analyze farm data", {
               description: "Please try again later.",
             });
           } finally {
-            setAnalyzing(false);
-            setLoading(false);
+            if (isMounted.current) {
+              setAnalyzing(false);
+              setLoading(false);
+            }
           }
         } else {
-          // Profile not found
-          toast.error("Farm profile not found", {
-            description: "The requested farm profile could not be found",
-          });
+          if (isMounted.current) {
+            setLoading(false);
+            setHasError(true);
+            toast.error("Farm profile not found", {
+              description: "The requested farm profile could not be found",
+            });
+          }
           navigate("/dashboard");
         }
       } else {
-        // No profile ID provided
-        setLoading(false);
-        toast.error("No farm profile selected", {
-          description: "Please select a farm profile to view recommendations",
-        });
+        if (isMounted.current) {
+          setLoading(false);
+          setHasError(true);
+          toast.error("No farm profile selected", {
+            description: "Please select a farm profile to view recommendations",
+          });
+        }
         navigate("/dashboard");
       }
     };
@@ -128,9 +164,16 @@ const Results = () => {
   }, [profileId, getFarmProfile, getCropRecommendations, updateFarmProfile, navigate]);
 
   const handleRefreshAnalysis = async () => {
-    if (!farmProfile) return;
+    if (!farmProfile || analyzing) return;
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
     
     setAnalyzing(true);
+    setHasError(false);
+    
     try {
       const result = await getCropRecommendations({
         location: farmProfile.location,
@@ -144,28 +187,35 @@ const Results = () => {
         notes: farmProfile.notes,
       });
       
+      if (!isMounted.current) return;
+      
       if (result && result.categories && result.categories.length > 0) {
         setCropCategories(result.categories);
         setReasoning(result.reasoning);
         setActiveCategory(result.categories[0].type);
-        setSaved(false); // Mark as unsaved since we have new data
+        setSaved(false);
         
         toast.success("Analysis refreshed", {
           description: "Your crop recommendations have been updated",
         });
       } else {
-        // API returned empty result, keep current recommendations if they exist
+        setHasError(true);
         toast.warning("Could not refresh recommendations", {
           description: "There was an issue connecting to our AI service. Your current recommendations remain unchanged.",
         });
       }
     } catch (err) {
+      if (!isMounted.current) return;
+      
       console.error("Failed to refresh recommendations:", err);
+      setHasError(true);
       toast.error("Failed to refresh analysis", {
         description: "Please try again later",
       });
     } finally {
-      setAnalyzing(false);
+      if (isMounted.current) {
+        setAnalyzing(false);
+      }
     }
   };
 
@@ -173,13 +223,14 @@ const Results = () => {
     if (!farmProfile || cropCategories.length === 0) return;
     
     try {
-      // Save recommendations to profile
       await updateFarmProfile(farmProfile.id, {
         categories: cropCategories,
         reasoning: reasoning,
       } as Partial<FarmProfile>);
       
-      setSaved(true);
+      if (isMounted.current) {
+        setSaved(true);
+      }
       
       toast.success("Recommendations saved", {
         description: "Your crop recommendations have been saved to your farm profile",
@@ -192,11 +243,10 @@ const Results = () => {
     }
   };
 
-  const handleDownloadReport = () => {
+  const handleDownloadReport = useCallback(() => {
     if (!farmProfile || cropCategories.length === 0) return;
     
     try {
-      // Create report content with categories
       const reportContent = `
 Crop Recommendation Report
 Farm: ${farmProfile.name}
@@ -230,7 +280,6 @@ ANALYSIS SUMMARY
 ${reasoning}
       `;
       
-      // Create and download file
       const blob = new Blob([reportContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -250,35 +299,28 @@ ${reasoning}
         description: "Please try again later",
       });
     }
-  };
+  }, [farmProfile, cropCategories, reasoning]);
 
-  const handleShareResults = () => {
-    if (navigator.share && farmProfile) {
-      navigator.share({
-        title: `CropAdvisor Recommendations for ${farmProfile.name}`,
-        text: `Check out my crop recommendations for ${farmProfile.name} from CropAdvisor!`,
-        url: window.location.href,
-      })
-        .then(() => toast.success("Shared successfully"))
-        .catch((error) => {
-          console.error("Error sharing:", error);
-          toast.error("Failed to share results");
-        });
-    } else {
-      // Fallback for browsers that don't support navigator.share
+  const handleShareResults = useCallback(() => {
+    if (!farmProfile) return;
+    
+    try {
       navigator.clipboard.writeText(window.location.href)
         .then(() => {
           toast.success("Link copied to clipboard", {
             description: "Share this link to show your crop recommendations",
           });
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error("Failed to copy link:", err);
           toast.error("Failed to copy link");
         });
+    } catch (err) {
+      console.error("Error sharing:", err);
+      toast.error("Failed to share results");
     }
-  };
+  }, [farmProfile]);
 
-  // Find crops for the active category
   const activeCategoryData = cropCategories.find(cat => cat.type === activeCategory);
   const activeCrops = activeCategoryData?.crops || [];
 
@@ -363,7 +405,6 @@ ${reasoning}
             </div>
           </div>
           
-          {/* Farm profile summary */}
           <div className="mb-8 animate-fade-in">
             <Card>
               <CardContent className="p-6">
@@ -403,6 +444,16 @@ ${reasoning}
             </Card>
           </div>
           
+          {hasError && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Error loading recommendations</AlertTitle>
+              <AlertDescription>
+                We encountered an issue while loading your crop recommendations. Please try refreshing the analysis or try again later.
+              </AlertDescription>
+            </Alert>
+          )}
+          
           {analyzing ? (
             <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
               <motion.div
@@ -433,7 +484,6 @@ ${reasoning}
                 </div>
               </div>
               
-              {/* Category tabs */}
               <div className="mb-6 animate-fade-in overflow-x-auto">
                 <div className="flex space-x-2 min-w-max pb-2">
                   {cropCategories.map((category, index) => (
@@ -455,7 +505,6 @@ ${reasoning}
                 </div>
               </div>
               
-              {/* Display crops for active category */}
               {activeCrops.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                   {activeCrops.map((crop, index) => (
@@ -479,6 +528,7 @@ ${reasoning}
                           isTopPick: crop.isTopPick,
                           maturityPeriod: crop.maturityPeriod,
                           bestPlantingTime: crop.bestPlantingTime,
+                          imageUrl: crop.imageUrl,
                         }}
                       />
                     </motion.div>

@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -11,7 +11,8 @@ import {
   BarChart2,
   Droplets,
   Calendar,
-  Layers
+  Layers,
+  AlertTriangle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ export interface CropDetails {
   isTopPick?: boolean;
   maturityPeriod: string;
   bestPlantingTime?: string;
+  imageUrl?: string;
 }
 
 interface CropCardProps {
@@ -37,6 +39,12 @@ interface CropCardProps {
 
 const CropCard = ({ crop, className }: CropCardProps) => {
   const [expanded, setExpanded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  // Reset image error state when crop changes
+  useEffect(() => {
+    setImageError(false);
+  }, [crop.id]);
 
   return (
     <Card className={cn(
@@ -59,6 +67,17 @@ const CropCard = ({ crop, className }: CropCardProps) => {
             </div>
           )}
         </div>
+
+        {crop.imageUrl && !imageError ? (
+          <div className="mt-3 h-32 overflow-hidden rounded-md">
+            <img 
+              src={crop.imageUrl} 
+              alt={crop.name}
+              className="w-full h-full object-cover"
+              onError={() => setImageError(true)}
+            />
+          </div>
+        ) : null}
 
         <div className="mt-3 space-y-1.5">
           <div className="flex items-center gap-1 text-sm">

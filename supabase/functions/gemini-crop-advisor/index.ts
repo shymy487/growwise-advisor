@@ -64,8 +64,23 @@ serve(async (req) => {
 
   try {
     // Parse farm data from request
-    const farmData: FarmData = await req.json();
-    console.log("Received farm data:", JSON.stringify(farmData));
+    let farmData: FarmData;
+    
+    try {
+      farmData = await req.json();
+      console.log("Received farm data:", JSON.stringify(farmData));
+    } catch (err) {
+      console.error("Failed to parse request body:", err);
+      return new Response(
+        JSON.stringify({ 
+          error: "Invalid request body. Please provide valid farm data." 
+        }),
+        { 
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400 
+        }
+      );
+    }
     
     // Generate cache key from farm data
     const cacheKey = JSON.stringify(farmData);
@@ -207,6 +222,7 @@ serve(async (req) => {
     
     while (attemptCount < maxAttempts) {
       try {
+        // Create an AbortController with a timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
         

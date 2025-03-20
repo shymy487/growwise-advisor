@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -33,6 +33,7 @@ export interface CropRecommendation {
   isTopPick: boolean;
   maturityPeriod: string;
   bestPlantingTime?: string;
+  imageUrl?: string;
 }
 
 export interface CropCategory {
@@ -49,14 +50,32 @@ export const useGeminiAI = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const MAX_RETRIES = 2; // Reduced retries since we also have retries in the Edge Function
 
   // Create a cache for responses to avoid repeated API calls
   const responseCache = new Map<string, GeminiResponse>();
 
+  // Cleanup function for aborting ongoing requests when component unmounts
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const getCropRecommendations = async (farmData: FarmData): Promise<GeminiResponse | null> => {
     setLoading(true);
     setError(null);
+
+    // Abort any ongoing requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create a new abort controller for this request
+    abortControllerRef.current = new AbortController();
 
     try {
       console.log("Calling Supabase Edge Function with farm data:", farmData);
@@ -90,27 +109,22 @@ export const useGeminiAI = () => {
         return responseCache.get(cacheKey)!;
       }
       
-      // Set up timeout for the entire operation
-      const timeoutPromise = new Promise<null>((_, reject) => {
-        setTimeout(() => reject(new Error("Request timed out. Please try again.")), 30000);
-      });
-      
       // Set up a proper user notification that analysis is in progress
       const toastId = toast.loading("Analyzing farm data...", {
         description: "Our AI is analyzing your farm conditions. This may take up to 30 seconds.",
       });
       
       try {
-        // Use Promise.race to implement timeout
-        const resultPromise = supabase.functions.invoke('gemini-crop-advisor', {
+        // Use the abort signal for the request
+        const result = await supabase.functions.invoke('gemini-crop-advisor', {
           body: farmData,
+          signal: abortControllerRef.current.signal,
         });
-        
-        const result = await Promise.race([resultPromise, timeoutPromise]);
-        const { data, error } = result || { data: null, error: new Error("Failed to get response") };
         
         // Update or dismiss the loading toast
         toast.dismiss(toastId);
+        
+        const { data, error } = result || { data: null, error: new Error("Failed to get response") };
         
         if (error) {
           console.error("Supabase Edge Function error:", error);
@@ -122,7 +136,10 @@ export const useGeminiAI = () => {
               description: `The server is busy. Retrying in ${delay/1000} seconds.`,
             });
             await new Promise(resolve => setTimeout(resolve, delay));
-            return getCropRecommendations(farmData);
+            // Only retry if we haven't been aborted
+            if (!abortControllerRef.current?.signal.aborted) {
+              return getCropRecommendations(farmData);
+            }
           }
           
           throw new Error(`Failed to analyze farm data: ${error.message}`);
@@ -149,13 +166,25 @@ export const useGeminiAI = () => {
         // Dismiss the loading toast if still active
         toast.dismiss(toastId);
         
+        // If aborted, it was intentional, so don't show an error
+        if (fetchError.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+          console.log('Request was aborted');
+          return null;
+        }
+        
         // Handle timeout or other fetch errors
-        if (fetchError.name === 'AbortError' || fetchError.message.includes('timed out')) {
+        if (fetchError.message.includes('timed out')) {
           throw new Error("Request timed out. Please try again.");
         }
         throw fetchError;
       }
     } catch (err: any) {
+      // Skip error messages if it was just aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        setLoading(false);
+        return null;
+      }
+      
       const errorMessage = err.message || "Failed to get crop recommendations";
       setError(errorMessage);
       
@@ -176,7 +205,9 @@ export const useGeminiAI = () => {
       console.error("AI recommendation error:", err);
       return null;
     } finally {
-      setLoading(false);
+      if (!abortControllerRef.current?.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
