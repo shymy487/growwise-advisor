@@ -2,11 +2,21 @@
 import { useState } from "react";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Leaf, ChevronDown, ChevronUp, Clock, DollarSign, BarChart2 } from "lucide-react";
+import { 
+  Leaf, 
+  ChevronDown, 
+  ChevronUp, 
+  Clock, 
+  DollarSign, 
+  BarChart2,
+  Droplets,
+  Calendar,
+  Layers
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface CropDetails {
-  id: string;
+  id?: string;
   name: string;
   description: string;
   estimatedProfit: number;
@@ -16,6 +26,8 @@ export interface CropDetails {
   waterRequirements: string;
   soilCompatibility: string[];
   isTopPick?: boolean;
+  maturityPeriod: string;
+  bestPlantingTime?: string;
 }
 
 interface CropCardProps {
@@ -27,11 +39,18 @@ const CropCard = ({ crop, className }: CropCardProps) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <Card className={cn("h-full overflow-hidden transition-all duration-300 border hover:border-crop-primary/50 hover:shadow-md", className)}>
+    <Card className={cn(
+      "h-full overflow-hidden transition-all duration-300 border", 
+      crop.isTopPick ? "border-crop-primary hover:shadow-md" : "hover:border-crop-primary/50 hover:shadow-md", 
+      className
+    )}>
       <CardContent className="p-4 md:p-6">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
-            <Leaf className="h-5 w-5 text-crop-primary shrink-0" />
+            <Leaf className={cn(
+              "h-5 w-5 shrink-0",
+              crop.isTopPick ? "text-crop-primary" : "text-crop-primary/70"
+            )} />
             <h3 className="font-medium text-lg">{crop.name}</h3>
           </div>
           {crop.isTopPick && (
@@ -41,7 +60,7 @@ const CropCard = ({ crop, className }: CropCardProps) => {
           )}
         </div>
 
-        <div className="mt-2 space-y-1">
+        <div className="mt-3 space-y-1.5">
           <div className="flex items-center gap-1 text-sm">
             <BarChart2 className="h-4 w-4 text-crop-primary/70" />
             <span className="text-muted-foreground">Score:</span>
@@ -56,7 +75,7 @@ const CropCard = ({ crop, className }: CropCardProps) => {
           
           <div className="flex items-center gap-1 text-sm">
             <Clock className="h-4 w-4 text-crop-primary/70" />
-            <span className="text-muted-foreground">Growth Period:</span>
+            <span className="text-muted-foreground">Growth:</span>
             <span className="font-medium">{crop.growthPeriod}</span>
           </div>
         </div>
@@ -69,12 +88,31 @@ const CropCard = ({ crop, className }: CropCardProps) => {
           <div className="mt-4 animate-fade-in border-t pt-4">
             <div className="space-y-3">
               <div>
-                <h4 className="text-sm font-medium">Water Requirements</h4>
+                <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                  <Calendar className="h-4 w-4 text-crop-primary/70" />
+                  Planting & Harvest
+                </h4>
+                <p className="text-sm text-muted-foreground">
+                  Best planting time: {crop.bestPlantingTime || "Not specified"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Maturity period: {crop.maturityPeriod}
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                  <Droplets className="h-4 w-4 text-crop-primary/70" />
+                  Water Requirements
+                </h4>
                 <p className="text-sm text-muted-foreground">{crop.waterRequirements}</p>
               </div>
               
               <div>
-                <h4 className="text-sm font-medium">Soil Compatibility</h4>
+                <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                  <Layers className="h-4 w-4 text-crop-primary/70" />
+                  Soil Compatibility
+                </h4>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {crop.soilCompatibility.map((soil, idx) => (
                     <span 
@@ -88,8 +126,13 @@ const CropCard = ({ crop, className }: CropCardProps) => {
               </div>
               
               <div>
-                <h4 className="text-sm font-medium">Market Price</h4>
-                <p className="text-sm text-muted-foreground">${crop.marketPrice.toFixed(2)}/unit</p>
+                <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                  <DollarSign className="h-4 w-4 text-crop-primary/70" />
+                  Market Information
+                </h4>
+                <p className="text-sm text-muted-foreground">
+                  Market price: ${crop.marketPrice.toFixed(2)}/unit
+                </p>
               </div>
             </div>
           </div>
@@ -99,7 +142,10 @@ const CropCard = ({ crop, className }: CropCardProps) => {
       <CardFooter className="p-4 pt-0 md:p-6 md:pt-0">
         <Button 
           variant="ghost" 
-          className="w-full text-crop-primary hover:bg-crop-accent hover:text-crop-primary"
+          className={cn(
+            "w-full hover:bg-crop-accent hover:text-crop-primary",
+            crop.isTopPick ? "text-crop-primary" : "text-muted-foreground"
+          )}
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? (

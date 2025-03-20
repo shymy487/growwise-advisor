@@ -86,6 +86,7 @@ export const useGeminiAI = () => {
       // Check if we have a cached response
       if (responseCache.has(cacheKey)) {
         console.log("Using cached response");
+        setLoading(false);
         return responseCache.get(cacheKey)!;
       }
       
@@ -96,7 +97,7 @@ export const useGeminiAI = () => {
       
       // Set up a proper user notification that analysis is in progress
       const toastId = toast.loading("Analyzing farm data...", {
-        description: "This may take up to 30 seconds.",
+        description: "Our AI is analyzing your farm conditions. This may take up to 30 seconds.",
       });
       
       try {
@@ -138,6 +139,10 @@ export const useGeminiAI = () => {
         
         // Cache the response for future use
         responseCache.set(cacheKey, data as GeminiResponse);
+        
+        toast.success("Analysis complete", {
+          description: "We've generated crop recommendations based on your farm data.",
+        });
         
         return data as GeminiResponse;
       } catch (fetchError: any) {

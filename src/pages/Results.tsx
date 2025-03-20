@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -18,67 +17,18 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CropCard from "@/components/CropCard";
 import LoadingSpinner from "@/components/LoadingSpinner";
-import { ArrowLeft, FileDown, Share2, RefreshCw, PenLine } from "lucide-react";
+import { 
+  ArrowLeft, 
+  FileDown, 
+  Share2, 
+  RefreshCw, 
+  PenLine,
+  BookmarkPlus,
+  Bookmark,
+  Download
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-
-// Sample data structure for categorized crops
-const MOCK_CROP_CATEGORIES: CropCategory[] = [
-  {
-    type: "Cereals & Grains",
-    crops: [
-      {
-        name: "Sample Wheat",
-        description: "This is a sample grain crop recommendation for demonstration purposes when the API is unavailable.",
-        estimatedProfit: 1200,
-        marketPrice: 4.5,
-        score: 95,
-        growthPeriod: "3-4 months",
-        waterRequirements: "Medium, about 15-20 inches during growing season",
-        soilCompatibility: ["Loamy", "Clay Loam"],
-        isTopPick: true,
-        maturityPeriod: "90-120 days",
-        bestPlantingTime: "Spring to early Summer"
-      }
-    ]
-  },
-  {
-    type: "Legumes & Pulses",
-    crops: [
-      {
-        name: "Sample Soybean",
-        description: "A sample legume for demonstration. In normal conditions, the AI would analyze your specific farm data.",
-        estimatedProfit: 950,
-        marketPrice: 3.2,
-        score: 85,
-        growthPeriod: "2-3 months",
-        waterRequirements: "Low to medium, drought resistant",
-        soilCompatibility: ["Sandy Loam", "Loamy"],
-        isTopPick: true,
-        maturityPeriod: "60-80 days",
-        bestPlantingTime: "Early to mid Spring"
-      }
-    ]
-  },
-  {
-    type: "Vegetables",
-    crops: [
-      {
-        name: "Sample Tomato",
-        description: "Third example crop. The actual recommendations would be tailored to your location and conditions.",
-        estimatedProfit: 1100,
-        marketPrice: 5.0,
-        score: 80,
-        growthPeriod: "4-5 months",
-        waterRequirements: "High, regular irrigation needed",
-        soilCompatibility: ["Rich Loam", "Clay Loam"],
-        isTopPick: true,
-        maturityPeriod: "110-140 days",
-        bestPlantingTime: "Late Spring"
-      }
-    ]
-  }
-];
 
 const Results = () => {
   const { isAuthenticated } = useAuth();
@@ -93,6 +43,7 @@ const Results = () => {
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const profileId = searchParams.get("profile");
 
@@ -113,6 +64,8 @@ const Results = () => {
             if (profile.categories.length > 0) {
               setActiveCategory(profile.categories[0].type);
             }
+            // Mark as saved since it was loaded from storage
+            setSaved(true);
             setLoading(false);
             return;
           }
@@ -124,7 +77,7 @@ const Results = () => {
               location: profile.location,
               landSize: profile.landSize,
               soilType: profile.soilType,
-              waterAvailability: profile.waterAvailability, // Now using string type for water availability
+              waterAvailability: profile.waterAvailability,
               budget: profile.budget,
               farmingPriority: profile.farmingPriority,
               experience: profile.experience,
@@ -137,30 +90,19 @@ const Results = () => {
               setReasoning(result.reasoning);
               setActiveCategory(result.categories[0].type);
               
-              // Save recommendations to profile
-              await updateFarmProfile(profile.id, {
-                categories: result.categories,
-                reasoning: result.reasoning,
-              } as Partial<FarmProfile>); // Type assertion to avoid property check
+              // Not saving automatically to allow user to decide
+              setSaved(false);
             } else {
-              // API returned empty or invalid result, use fallback
-              toast.warning("Using sample recommendations", {
-                description: "We're having trouble connecting to our AI service. Showing sample data instead.",
+              // API returned empty or invalid result
+              toast.warning("Failed to get recommendations", {
+                description: "We're having trouble connecting to our AI service. Please try again later.",
               });
-              setCropCategories(MOCK_CROP_CATEGORIES);
-              setActiveCategory(MOCK_CROP_CATEGORIES[0].type);
-              setReasoning("Sample data displayed due to AI service connection issues. Please try again later for personalized recommendations.");
             }
           } catch (err) {
             console.error("Failed to get recommendations:", err);
             toast.error("Failed to analyze farm data", {
-              description: "Using sample recommendations instead. Please try again later.",
+              description: "Please try again later.",
             });
-            
-            // Use fallback data
-            setCropCategories(MOCK_CROP_CATEGORIES);
-            setActiveCategory(MOCK_CROP_CATEGORIES[0].type);
-            setReasoning("Sample data displayed due to AI service connection issues. Please try again later for personalized recommendations.");
           } finally {
             setAnalyzing(false);
             setLoading(false);
@@ -194,7 +136,7 @@ const Results = () => {
         location: farmProfile.location,
         landSize: farmProfile.landSize,
         soilType: farmProfile.soilType,
-        waterAvailability: farmProfile.waterAvailability, // Now using string type
+        waterAvailability: farmProfile.waterAvailability,
         budget: farmProfile.budget,
         farmingPriority: farmProfile.farmingPriority,
         experience: farmProfile.experience,
@@ -206,12 +148,7 @@ const Results = () => {
         setCropCategories(result.categories);
         setReasoning(result.reasoning);
         setActiveCategory(result.categories[0].type);
-        
-        // Save recommendations to profile
-        await updateFarmProfile(farmProfile.id, {
-          categories: result.categories,
-          reasoning: result.reasoning,
-        } as Partial<FarmProfile>); // Type assertion to avoid property check
+        setSaved(false); // Mark as unsaved since we have new data
         
         toast.success("Analysis refreshed", {
           description: "Your crop recommendations have been updated",
@@ -229,6 +166,29 @@ const Results = () => {
       });
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleSaveToProfile = async () => {
+    if (!farmProfile || cropCategories.length === 0) return;
+    
+    try {
+      // Save recommendations to profile
+      await updateFarmProfile(farmProfile.id, {
+        categories: cropCategories,
+        reasoning: reasoning,
+      } as Partial<FarmProfile>);
+      
+      setSaved(true);
+      
+      toast.success("Recommendations saved", {
+        description: "Your crop recommendations have been saved to your farm profile",
+      });
+    } catch (err) {
+      console.error("Failed to save recommendations:", err);
+      toast.error("Failed to save recommendations", {
+        description: "Please try again later",
+      });
     }
   };
 
@@ -258,6 +218,8 @@ ${index + 1}. ${crop.name} ${crop.isTopPick ? '(Top Pick)' : ''}
    Estimated Profit: $${crop.estimatedProfit}/acre
    Market Price: $${crop.marketPrice}/unit
    Growth Period: ${crop.growthPeriod}
+   Maturity Period: ${crop.maturityPeriod}
+   Best Planting Time: ${crop.bestPlantingTime || 'Not specified'}
    Description: ${crop.description}
    Water Requirements: ${crop.waterRequirements}
    Soil Compatibility: ${crop.soilCompatibility.join(', ')}
@@ -375,6 +337,18 @@ ${reasoning}
                   Refresh
                 </Button>
                 
+                {!saved && cropCategories.length > 0 && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="bg-crop-accent/30 hover:bg-crop-accent"
+                    onClick={handleSaveToProfile}
+                  >
+                    <BookmarkPlus className="h-4 w-4 mr-2" />
+                    Save Analysis
+                  </Button>
+                )}
+                
                 <Button 
                   variant="default" 
                   size="sm"
@@ -382,8 +356,8 @@ ${reasoning}
                   onClick={handleDownloadReport}
                   disabled={analyzing || cropCategories.length === 0}
                 >
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Save Results
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
                 </Button>
               </div>
             </div>
@@ -503,6 +477,8 @@ ${reasoning}
                           waterRequirements: crop.waterRequirements,
                           soilCompatibility: crop.soilCompatibility,
                           isTopPick: crop.isTopPick,
+                          maturityPeriod: crop.maturityPeriod,
+                          bestPlantingTime: crop.bestPlantingTime,
                         }}
                       />
                     </motion.div>

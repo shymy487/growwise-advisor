@@ -28,6 +28,17 @@ interface FarmData {
   notes?: string;
 }
 
+interface ResponseCache {
+  [key: string]: {
+    data: any;
+    timestamp: number;
+  }
+}
+
+// Simple in-memory cache with 24 hour expiry
+const cache: ResponseCache = {};
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -55,6 +66,19 @@ serve(async (req) => {
     // Parse farm data from request
     const farmData: FarmData = await req.json();
     console.log("Received farm data:", JSON.stringify(farmData));
+    
+    // Generate cache key from farm data
+    const cacheKey = JSON.stringify(farmData);
+    
+    // Check cache for existing result
+    const now = Date.now();
+    if (cache[cacheKey] && (now - cache[cacheKey].timestamp < CACHE_TTL)) {
+      console.log("Cache hit! Returning cached result");
+      return new Response(
+        JSON.stringify(cache[cacheKey].data),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     
     // Validate required fields
     if (!farmData.location || !farmData.soilType || !farmData.waterAvailability) {
@@ -94,10 +118,11 @@ serve(async (req) => {
       }
     }
     
-    // Construct the Gemini prompt with categorization request
-    const prompt = `As an agricultural AI expert, analyze the following farm data and recommend crops categorized by type.
+    // Construct the Gemini prompt with categorization request and region-specific details
+    const prompt = `You are CropAdvisor AI, an expert agricultural scientist specializing in crop recommendations and farm planning. Analyze the following farm data in detail and recommend crops categorized by type.
     
-    Farm location: ${farmData.location.name}
+    === FARM DATA ===
+    Location: ${farmData.location.name}
     Coordinates: ${farmData.location.lat}, ${farmData.location.lng}
     Land size: ${farmData.landSize} acres
     Soil type: ${farmData.soilType}
@@ -108,7 +133,17 @@ serve(async (req) => {
     ${farmData.previousCrop ? `Previous crop: ${farmData.previousCrop}` : ''}
     ${farmData.notes ? `Additional notes: ${farmData.notes}` : ''}
     
-    IMPORTANT: Your response MUST be a valid JSON object with the following structure:
+    === INSTRUCTIONS ===
+    1. Consider the specific climate at the given coordinates, focusing on temperature ranges, growing season length, and rainfall patterns.
+    2. Analyze local market conditions for the region based on the coordinates.
+    3. Recommend crops that are specifically suited for the ${farmData.soilType} soil type.
+    4. Consider the water availability of ${waterInInches} when selecting crops.
+    5. Prioritize crops that align with the farmer's "${farmData.farmingPriority}" priority.
+    6. Include both traditional and specialty crops with market potential.
+    7. For beginner farmers, emphasize easier-to-grow crops.
+    8. Provide at least 2-3 crop options in EACH category that are suitable for this specific farm.
+    
+    YOUR RESPONSE MUST be a valid JSON object with the following structure:
     {
       "categories": [
         {
@@ -116,15 +151,15 @@ serve(async (req) => {
           "crops": [
             {
               "name": "Crop name",
-              "description": "Brief description of why this crop is suitable",
-              "estimatedProfit": Number (profit per acre),
-              "marketPrice": Number (price per unit),
+              "description": "Detailed explanation of why this crop is suitable for THIS SPECIFIC FARM",
+              "estimatedProfit": Number (profit per acre in USD),
+              "marketPrice": Number (price per unit in USD),
               "score": Number (0-100 suitability score),
               "growthPeriod": "Duration in weeks/months",
-              "waterRequirements": "Description of water needs",
-              "soilCompatibility": ["soil type 1", "soil type 2"],
+              "waterRequirements": "Detailed water needs for this crop",
+              "soilCompatibility": ["Compatible soil type 1", "Compatible soil type 2"],
               "maturityPeriod": "Time from planting to harvest (e.g., 90-120 days)",
-              "bestPlantingTime": "Optimal planting season or months for this location",
+              "bestPlantingTime": "Optimal planting season or months for this SPECIFIC LOCATION",
               "isTopPick": Boolean (true only for the top crop in this category)
             }
           ]
@@ -142,22 +177,25 @@ serve(async (req) => {
           "crops": [...]
         },
         {
-          "type": "Fruits",
+          "type": "Fruits & Berries",
           "crops": [...]
         },
         {
-          "type": "Cash Crops",
+          "type": "Oil & Fiber Crops",
+          "crops": [...]
+        },
+        {
+          "type": "Specialty & High-Value Crops",
           "crops": [...]
         }
       ],
-      "reasoning": "Brief explanation of the overall recommendation logic based on the farm data"
+      "reasoning": "Detailed explanation of the overall recommendation logic based on THIS SPECIFIC FARM's data"
     }
     
     Ensure you include at least one crop in each category that's suitable for the farm conditions.
+    Make the descriptions and reasoning SPECIFIC to this farm, not generic.
     If a category has no suitable crops, still include the category with an empty crops array.
     Make sure there is exactly ONE crop with isTopPick:true in EACH non-empty category.
-    Ensure the sum of scores across all crops is reasonable (not too high).
-    Consider climate at the given coordinates, soil compatibility, and water needs carefully.
     Do NOT include any text, explanations, or markdown outside of this JSON structure.`;
     
     console.log("Sending request to Gemini API...");
@@ -172,7 +210,6 @@ serve(async (req) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
         
-        // Updated Gemini API URL to use gemini-pro model
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`,
           {
@@ -212,7 +249,7 @@ serve(async (req) => {
         const result = await response.json();
         console.log("Received response from Gemini API");
         
-        // Updated response parsing for gemini-pro model
+        // Get text content from the response
         const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         
         if (!textContent) {
@@ -260,6 +297,12 @@ serve(async (req) => {
             
             return category;
           });
+          
+          // Cache the processed response
+          cache[cacheKey] = {
+            data: parsedResponse,
+            timestamp: Date.now()
+          };
           
           // Return the processed response
           console.log("Successfully processed crop recommendations");
