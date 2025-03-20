@@ -77,17 +77,19 @@ export const useGeminiAI = () => {
         }
       }
       
-      // Call our Supabase Edge Function with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      // Set up timeout for the entire operation
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timed out. Please try again.")), 30000);
+      });
       
       try {
-        const { data, error } = await supabase.functions.invoke('gemini-crop-advisor', {
+        // Use Promise.race to implement timeout without using AbortController
+        const resultPromise = supabase.functions.invoke('gemini-crop-advisor', {
           body: farmData,
-          signal: controller.signal,
         });
         
-        clearTimeout(timeoutId);
+        const result = await Promise.race([resultPromise, timeoutPromise]);
+        const { data, error } = result || { data: null, error: new Error("Failed to get response") };
         
         if (error) {
           console.error("Supabase Edge Function error:", error);
@@ -115,8 +117,9 @@ export const useGeminiAI = () => {
         }
         
         return data as GeminiResponse;
-      } catch (fetchError) {
-        if (fetchError.name === 'AbortError') {
+      } catch (fetchError: any) {
+        // Handle timeout or other fetch errors
+        if (fetchError.name === 'AbortError' || fetchError.message.includes('timed out')) {
           throw new Error("Request timed out. Please try again.");
         }
         throw fetchError;
