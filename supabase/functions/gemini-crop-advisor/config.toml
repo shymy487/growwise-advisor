@@ -4,6 +4,3 @@ project_id = "ndkdfsfezzgwmgjsfgxk"
 [build]
 command = "deno run --allow-net --allow-env --allow-read https://deno.land/x/xhr@0.3.0/mod.ts"
 watch_exclude = ["**/*.log", "**/*.lock", "**/*.md"]
-
-[env]
-GEMINI_API_KEY = "AIzaSyCqoc5W561L0nbQAjceEBQL5na33clCpLQ"

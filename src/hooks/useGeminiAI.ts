@@ -51,6 +51,9 @@ export const useGeminiAI = () => {
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2; // Reduced retries since we also have retries in the Edge Function
 
+  // Create a cache for responses to avoid repeated API calls
+  const responseCache = new Map<string, GeminiResponse>();
+
   const getCropRecommendations = async (farmData: FarmData): Promise<GeminiResponse | null> => {
     setLoading(true);
     setError(null);
@@ -77,19 +80,36 @@ export const useGeminiAI = () => {
         }
       }
       
+      // Generate a cache key from the farm data
+      const cacheKey = JSON.stringify(farmData);
+      
+      // Check if we have a cached response
+      if (responseCache.has(cacheKey)) {
+        console.log("Using cached response");
+        return responseCache.get(cacheKey)!;
+      }
+      
       // Set up timeout for the entire operation
       const timeoutPromise = new Promise<null>((_, reject) => {
         setTimeout(() => reject(new Error("Request timed out. Please try again.")), 30000);
       });
       
+      // Set up a proper user notification that analysis is in progress
+      const toastId = toast.loading("Analyzing farm data...", {
+        description: "This may take up to 30 seconds.",
+      });
+      
       try {
-        // Use Promise.race to implement timeout without using AbortController
+        // Use Promise.race to implement timeout
         const resultPromise = supabase.functions.invoke('gemini-crop-advisor', {
           body: farmData,
         });
         
         const result = await Promise.race([resultPromise, timeoutPromise]);
         const { data, error } = result || { data: null, error: new Error("Failed to get response") };
+        
+        // Update or dismiss the loading toast
+        toast.dismiss(toastId);
         
         if (error) {
           console.error("Supabase Edge Function error:", error);
@@ -116,8 +136,14 @@ export const useGeminiAI = () => {
           throw new Error("Invalid response format from server");
         }
         
+        // Cache the response for future use
+        responseCache.set(cacheKey, data as GeminiResponse);
+        
         return data as GeminiResponse;
       } catch (fetchError: any) {
+        // Dismiss the loading toast if still active
+        toast.dismiss(toastId);
+        
         // Handle timeout or other fetch errors
         if (fetchError.name === 'AbortError' || fetchError.message.includes('timed out')) {
           throw new Error("Request timed out. Please try again.");

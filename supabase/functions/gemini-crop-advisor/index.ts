@@ -172,8 +172,9 @@ serve(async (req) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
         
+        // Updated Gemini API URL to use gemini-pro model
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro/generateContent?key=${API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`,
           {
             method: "POST",
             headers: {
@@ -203,14 +204,15 @@ serve(async (req) => {
         clearTimeout(timeoutId);
         
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Gemini API error (${response.status}):`, errorText);
+          const errorData = await response.text();
+          console.error(`Gemini API error (${response.status}):`, errorData);
           throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
         
         const result = await response.json();
         console.log("Received response from Gemini API");
         
+        // Updated response parsing for gemini-pro model
         const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         
         if (!textContent) {
