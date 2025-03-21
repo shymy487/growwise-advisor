@@ -1,6 +1,17 @@
 
-project_id = "ndkdfsfezzgwmgjsfgxk"
+# This configuration file is part of Supabase Edge Functions
+project_id = ""
 
-[build]
-command = "deno run --allow-net --allow-env --allow-read https://deno.land/x/xhr@0.3.0/mod.ts"
-watch_exclude = ["**/*.log", "**/*.lock", "**/*.md"]
+[gcr]
+disable_public_cache = true
+
+[deploy.release]
+include = ["**"]
+exclude = ["node_modules/**", "**/node_modules/**", "**/__pycache__/**", "*.ts", "!*.d.ts"]
+
+[migrations]
+include = ["**"]
+exclude = ["node_modules/**", "**/node_modules/**", "**/__pycache__/**", "*.ts", "!*.d.ts"]
+
+[environment_variables]
+GEMINI_API_KEY = ""
