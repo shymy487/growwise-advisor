@@ -178,42 +178,19 @@ serve(async (req) => {
               "isTopPick": Boolean (true only for the top crop in this category)
             }
           ]
-        },
-        {
-          "type": "Legumes & Pulses",
-          "crops": [...]
-        },
-        {
-          "type": "Vegetables",
-          "crops": [...]
-        },
-        {
-          "type": "Root Crops & Tubers",
-          "crops": [...]
-        },
-        {
-          "type": "Fruits & Berries",
-          "crops": [...]
-        },
-        {
-          "type": "Oil & Fiber Crops",
-          "crops": [...]
-        },
-        {
-          "type": "Specialty & High-Value Crops",
-          "crops": [...]
         }
       ],
       "reasoning": "Detailed explanation of the overall recommendation logic based on THIS SPECIFIC FARM's data"
     }
     
-    Ensure you include at least one crop in each category that's suitable for the farm conditions.
-    Make the descriptions and reasoning SPECIFIC to this farm, not generic.
-    If a category has no suitable crops, still include the category with an empty crops array.
+    IMPORTANT: Your response must be valid JSON. Do not include any text outside of the JSON structure. No markdown or other formatting.
     Make sure there is exactly ONE crop with isTopPick:true in EACH non-empty category.
-    Do NOT include any text, explanations, or markdown outside of this JSON structure.`;
+    If a category has no suitable crops for this farm's conditions, include an empty crops array for that category.
+    Make all descriptions and reasoning HIGHLY SPECIFIC to this farm's exact conditions, not generic.`;
     
     console.log("Sending request to Gemini API...");
+    console.log("API KEY LENGTH:", API_KEY.length);
+    console.log("API KEY FIRST 4 CHARS:", API_KEY.substring(0, 4));
     
     // Call the Gemini API with timeout and retry
     let attemptCount = 0;
@@ -259,7 +236,7 @@ serve(async (req) => {
         if (!response.ok) {
           const errorData = await response.text();
           console.error(`Gemini API error (${response.status}):`, errorData);
-          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+          throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorData}`);
         }
         
         const result = await response.json();
@@ -269,12 +246,14 @@ serve(async (req) => {
         const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         
         if (!textContent) {
+          console.error("Empty response from Gemini API:", result);
           throw new Error("Empty response from AI service");
         }
         
         // Extract JSON from response (in case there's other text)
         const jsonMatch = textContent.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
+          console.error("Failed to parse AI response as JSON. Raw response:", textContent);
           throw new Error("Failed to parse AI response as JSON");
         }
         
@@ -283,6 +262,7 @@ serve(async (req) => {
           
           // Validate the response structure
           if (!parsedResponse.categories || !Array.isArray(parsedResponse.categories)) {
+            console.error("Invalid response format - missing categories array:", parsedResponse);
             throw new Error("Invalid response format - missing categories array");
           }
           
@@ -314,6 +294,28 @@ serve(async (req) => {
             return category;
           });
           
+          // Add standard categories if they're missing to ensure UI consistency
+          const standardCategories = [
+            "Grains & Cereals", 
+            "Legumes & Pulses", 
+            "Vegetables", 
+            "Root Crops & Tubers",
+            "Fruits & Berries", 
+            "Oil & Fiber Crops", 
+            "Specialty & High-Value Crops"
+          ];
+          
+          const existingCategoryTypes = parsedResponse.categories.map(cat => cat.type);
+          
+          standardCategories.forEach(catType => {
+            if (!existingCategoryTypes.includes(catType)) {
+              parsedResponse.categories.push({
+                type: catType,
+                crops: []
+              });
+            }
+          });
+          
           // Cache the processed response
           cache[cacheKey] = {
             data: parsedResponse,
@@ -327,7 +329,7 @@ serve(async (req) => {
             { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         } catch (parseError) {
-          console.error("Error parsing Gemini response:", parseError);
+          console.error("Error parsing Gemini response:", parseError, "Raw text:", textContent);
           // This could be a JSON parsing error, so let's retry
           throw parseError;
         }
@@ -346,71 +348,18 @@ serve(async (req) => {
     }
     
     // If we get here, all attempts failed
-    console.error("All attempts failed, returning fallback response");
+    console.error("All attempts failed:", lastError);
     
-    // Return fallback data as a last resort
+    // Return a more descriptive error response
     return new Response(
       JSON.stringify({
-        categories: [
-          {
-            type: "Grains & Cereals",
-            crops: [
-              {
-                name: "Wheat (Fallback)",
-                description: "This is fallback data due to API issues. We recommend trying again later for accurate recommendations.",
-                estimatedProfit: 800,
-                marketPrice: 7.5,
-                score: 75,
-                growthPeriod: "3-4 months",
-                waterRequirements: "Medium",
-                soilCompatibility: ["Loamy", "Clay-loam"],
-                isTopPick: true,
-                maturityPeriod: "110-130 days",
-                bestPlantingTime: "Early Spring"
-              }
-            ]
-          },
-          {
-            type: "Vegetables",
-            crops: [
-              {
-                name: "Tomatoes (Fallback)",
-                description: "This is fallback data due to API issues. We recommend trying again later for accurate recommendations.",
-                estimatedProfit: 1200,
-                marketPrice: 3.5,
-                score: 80,
-                growthPeriod: "2-3 months",
-                waterRequirements: "High",
-                soilCompatibility: ["Sandy loam", "Loamy"],
-                isTopPick: true,
-                maturityPeriod: "70-85 days",
-                bestPlantingTime: "After last frost"
-              }
-            ]
-          },
-          {
-            type: "Legumes & Pulses",
-            crops: [
-              {
-                name: "Soybeans (Fallback)",
-                description: "This is fallback data due to API issues. We recommend trying again later for accurate recommendations.",
-                estimatedProfit: 950,
-                marketPrice: 14.25,
-                score: 85,
-                growthPeriod: "3-5 months",
-                waterRequirements: "Medium",
-                soilCompatibility: ["Sandy", "Loamy"],
-                isTopPick: true,
-                maturityPeriod: "100-120 days",
-                bestPlantingTime: "Late Spring"
-              }
-            ]
-          }
-        ],
-        reasoning: "This is fallback data due to API connection issues. Please try again later for personalized recommendations based on your farm data."
+        error: `Failed to get crop recommendations after ${maxAttempts} attempts`,
+        details: lastError ? lastError.message : "Unknown error",
+        suggestion: "Please try again later. If the problem persists, please contact support."
       }),
       { 
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500
       }
     );
   } catch (err) {

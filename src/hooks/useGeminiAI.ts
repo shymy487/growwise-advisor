@@ -136,6 +136,19 @@ export const useGeminiAI = () => {
         });
       }
       
+      // Set up a timeout to handle stuck requests
+      const timeoutId = setTimeout(() => {
+        if (abortControllerRef.current && isMountedRef.current) {
+          abortControllerRef.current.abort();
+          toast.dismiss(toastId);
+          toast.error("Request timed out", {
+            description: "The analysis is taking too long. Please try again.",
+          });
+          setError("Request timed out");
+          setLoading(false);
+        }
+      }, 30000); // 30 second timeout
+      
       try {
         // Use supabase functions invoke without the abort signal
         // The signal property is not part of FunctionInvokeOptions
@@ -143,27 +156,14 @@ export const useGeminiAI = () => {
           body: farmData,
         });
         
-        // Set up a timeout to handle stuck requests
-        const timeoutId = setTimeout(() => {
-          if (abortControllerRef.current && isMountedRef.current) {
-            abortControllerRef.current.abort();
-            toast.dismiss(toastId);
-            toast.error("Request timed out", {
-              description: "The analysis is taking too long. Please try again.",
-            });
-            setError("Request timed out");
-            setLoading(false);
-          }
-        }, 30000); // 30 second timeout
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
         
         // Only update UI if component is still mounted
         if (isMountedRef.current) {
           // Update or dismiss the loading toast
           toast.dismiss(toastId);
         }
-        
-        // Clear the timeout
-        clearTimeout(timeoutId);
         
         const { data, error } = result || { data: null, error: new Error("Failed to get response") };
         
@@ -194,8 +194,15 @@ export const useGeminiAI = () => {
         
         console.log("Edge function response:", data);
         
+        // Check if we got an error response from the edge function
+        if (data && data.error) {
+          console.error("Error from edge function:", data.error);
+          throw new Error(data.error);
+        }
+        
         // Validate the response
-        if (!data.categories || !Array.isArray(data.categories)) {
+        if (!data || !data.categories || !Array.isArray(data.categories)) {
+          console.error("Invalid response format from server:", data);
           throw new Error("Invalid response format from server");
         }
         
@@ -211,6 +218,9 @@ export const useGeminiAI = () => {
         
         return data as GeminiResponse;
       } catch (fetchError: any) {
+        // Clear the timeout since we got an error
+        clearTimeout(timeoutId);
+        
         // Only update UI if component is still mounted
         if (isMountedRef.current) {
           // Dismiss the loading toast if still active
