@@ -115,14 +115,30 @@ export const useGeminiAI = () => {
       });
       
       try {
-        // Use the abort signal for the request
+        // Use supabase functions invoke without the abort signal
+        // The signal property is not part of FunctionInvokeOptions
         const result = await supabase.functions.invoke('gemini-crop-advisor', {
           body: farmData,
-          signal: abortControllerRef.current.signal,
         });
+        
+        // Set up a timeout to handle stuck requests
+        const timeoutId = setTimeout(() => {
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            toast.dismiss(toastId);
+            toast.error("Request timed out", {
+              description: "The analysis is taking too long. Please try again.",
+            });
+            setError("Request timed out");
+            setLoading(false);
+          }
+        }, 30000); // 30 second timeout
         
         // Update or dismiss the loading toast
         toast.dismiss(toastId);
+        
+        // Clear the timeout
+        clearTimeout(timeoutId);
         
         const { data, error } = result || { data: null, error: new Error("Failed to get response") };
         
