@@ -51,23 +51,38 @@ export const useGeminiAI = () => {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
   const MAX_RETRIES = 2; // Reduced retries since we also have retries in the Edge Function
 
   // Create a cache for responses to avoid repeated API calls
-  const responseCache = new Map<string, GeminiResponse>();
+  const responseCache = useRef(new Map<string, GeminiResponse>());
 
   // Cleanup function for aborting ongoing requests when component unmounts
   useEffect(() => {
+    // Set isMounted flag to true when the component mounts
+    isMountedRef.current = true;
+    
     return () => {
+      // Set isMounted flag to false when the component unmounts
+      isMountedRef.current = false;
+      
+      // Abort any ongoing requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
   const getCropRecommendations = async (farmData: FarmData): Promise<GeminiResponse | null> => {
-    setLoading(true);
-    setError(null);
+    // Don't proceed if the component is unmounted
+    if (!isMountedRef.current) return null;
+    
+    // Only set loading state if the component is still mounted
+    if (isMountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
 
     // Abort any ongoing requests
     if (abortControllerRef.current) {
@@ -103,16 +118,23 @@ export const useGeminiAI = () => {
       const cacheKey = JSON.stringify(farmData);
       
       // Check if we have a cached response
-      if (responseCache.has(cacheKey)) {
+      if (responseCache.current.has(cacheKey)) {
         console.log("Using cached response");
-        setLoading(false);
-        return responseCache.get(cacheKey)!;
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+        return responseCache.current.get(cacheKey)!;
       }
       
-      // Set up a proper user notification that analysis is in progress
-      const toastId = toast.loading("Analyzing farm data...", {
-        description: "Our AI is analyzing your farm conditions. This may take up to 30 seconds.",
-      });
+      let toastId: string | number = '';
+      
+      // Only show toast if component is mounted
+      if (isMountedRef.current) {
+        // Set up a proper user notification that analysis is in progress
+        toastId = toast.loading("Analyzing farm data...", {
+          description: "Our AI is analyzing your farm conditions. This may take up to 30 seconds.",
+        });
+      }
       
       try {
         // Use supabase functions invoke without the abort signal
@@ -123,7 +145,7 @@ export const useGeminiAI = () => {
         
         // Set up a timeout to handle stuck requests
         const timeoutId = setTimeout(() => {
-          if (abortControllerRef.current) {
+          if (abortControllerRef.current && isMountedRef.current) {
             abortControllerRef.current.abort();
             toast.dismiss(toastId);
             toast.error("Request timed out", {
@@ -134,8 +156,11 @@ export const useGeminiAI = () => {
           }
         }, 30000); // 30 second timeout
         
-        // Update or dismiss the loading toast
-        toast.dismiss(toastId);
+        // Only update UI if component is still mounted
+        if (isMountedRef.current) {
+          // Update or dismiss the loading toast
+          toast.dismiss(toastId);
+        }
         
         // Clear the timeout
         clearTimeout(timeoutId);
@@ -145,15 +170,15 @@ export const useGeminiAI = () => {
         if (error) {
           console.error("Supabase Edge Function error:", error);
           
-          if (retryCount < MAX_RETRIES) {
+          if (retryCount < MAX_RETRIES && isMountedRef.current) {
             setRetryCount(prev => prev + 1);
             const delay = Math.pow(2, retryCount) * 1000;
             toast.warning("Retrying analysis...", {
               description: `The server is busy. Retrying in ${delay/1000} seconds.`,
             });
             await new Promise(resolve => setTimeout(resolve, delay));
-            // Only retry if we haven't been aborted
-            if (!abortControllerRef.current?.signal.aborted) {
+            // Only retry if we haven't been aborted and component is still mounted
+            if (!abortControllerRef.current?.signal.aborted && isMountedRef.current) {
               return getCropRecommendations(farmData);
             }
           }
@@ -161,8 +186,12 @@ export const useGeminiAI = () => {
           throw new Error(`Failed to analyze farm data: ${error.message}`);
         }
         
-        // Reset retry count on success
-        setRetryCount(0);
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          // Reset retry count on success
+          setRetryCount(0);
+        }
+        
         console.log("Edge function response:", data);
         
         // Validate the response
@@ -171,16 +200,22 @@ export const useGeminiAI = () => {
         }
         
         // Cache the response for future use
-        responseCache.set(cacheKey, data as GeminiResponse);
+        responseCache.current.set(cacheKey, data as GeminiResponse);
         
-        toast.success("Analysis complete", {
-          description: "We've generated crop recommendations based on your farm data.",
-        });
+        // Only show toast if component is still mounted
+        if (isMountedRef.current) {
+          toast.success("Analysis complete", {
+            description: "We've generated crop recommendations based on your farm data.",
+          });
+        }
         
         return data as GeminiResponse;
       } catch (fetchError: any) {
-        // Dismiss the loading toast if still active
-        toast.dismiss(toastId);
+        // Only update UI if component is still mounted
+        if (isMountedRef.current) {
+          // Dismiss the loading toast if still active
+          toast.dismiss(toastId);
+        }
         
         // If aborted, it was intentional, so don't show an error
         if (fetchError.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
@@ -195,33 +230,40 @@ export const useGeminiAI = () => {
         throw fetchError;
       }
     } catch (err: any) {
-      // Skip error messages if it was just aborted
-      if (abortControllerRef.current?.signal.aborted) {
-        setLoading(false);
+      // Skip error messages if it was just aborted or component unmounted
+      if (abortControllerRef.current?.signal.aborted || !isMountedRef.current) {
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
         return null;
       }
       
-      const errorMessage = err.message || "Failed to get crop recommendations";
-      setError(errorMessage);
-      
-      // Customize error message based on error type
-      let description = "Please try again or check your network connection.";
-      if (errorMessage.includes("timed out")) {
-        description = "The server took too long to respond. Please try again.";
-      } else if (errorMessage.includes("network") || errorMessage.includes("connection")) {
-        description = "Please check your internet connection and try again.";
-      } else if (errorMessage.includes("API")) {
-        description = "There was an issue with our AI service. We're working to fix it.";
+      // Only update state if component is still mounted
+      if (isMountedRef.current) {
+        const errorMessage = err.message || "Failed to get crop recommendations";
+        setError(errorMessage);
+        
+        // Customize error message based on error type
+        let description = "Please try again or check your network connection.";
+        if (errorMessage.includes("timed out")) {
+          description = "The server took too long to respond. Please try again.";
+        } else if (errorMessage.includes("network") || errorMessage.includes("connection")) {
+          description = "Please check your internet connection and try again.";
+        } else if (errorMessage.includes("API")) {
+          description = "There was an issue with our AI service. We're working to fix it.";
+        }
+        
+        toast.error("Error analyzing farm data", {
+          description: description,
+        });
       }
-      
-      toast.error("Error analyzing farm data", {
-        description: description,
-      });
       
       console.error("AI recommendation error:", err);
       return null;
     } finally {
-      if (!abortControllerRef.current?.signal.aborted) {
+      // Only update state if component is still mounted and not aborted
+      if (isMountedRef.current && !abortControllerRef.current?.signal.aborted) {
         setLoading(false);
       }
     }

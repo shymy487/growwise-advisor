@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { FarmDataProvider } from "@/contexts/FarmDataContext";
 import { AnimatePresence } from "framer-motion";
+import { StrictMode } from "react";
 
 // Pages
 import Home from "./pages/Home";
@@ -18,7 +19,17 @@ import InputData from "./pages/InputData";
 import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+// Configure React Query with proper settings to avoid memory leaks
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

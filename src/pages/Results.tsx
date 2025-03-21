@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -48,52 +49,60 @@ const Results = () => {
   const [saved, setSaved] = useState(false);
   const [hasError, setHasError] = useState(false);
   
-  const isMounted = useRef(true);
+  const isMountedRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const profileId = searchParams.get("profile");
 
+  // Setup mount/unmount cleanup
   useEffect(() => {
+    isMountedRef.current = true;
+    
     return () => {
-      isMounted.current = false;
+      isMountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
   useEffect(() => {
     const fetchProfileAndRecommendations = async () => {
-      if (!isMounted.current) return;
+      if (!isMountedRef.current) return;
       
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
       
       abortControllerRef.current = new AbortController();
-      setLoading(true);
-      setHasError(false);
+      
+      if (isMountedRef.current) {
+        setLoading(true);
+        setHasError(false);
+      }
       
       if (profileId) {
         const profile = getFarmProfile(profileId);
         if (profile) {
-          setFarmProfile(profile);
+          if (isMountedRef.current) {
+            setFarmProfile(profile);
+          }
           
           if (profile.categories && profile.categories.length > 0) {
-            setCropCategories(profile.categories);
-            setReasoning(profile.reasoning || "Recommendations loaded from previous analysis.");
-            if (profile.categories.length > 0) {
-              setActiveCategory(profile.categories[0].type);
-            }
-            setSaved(true);
-            
-            if (isMounted.current) {
+            if (isMountedRef.current) {
+              setCropCategories(profile.categories);
+              setReasoning(profile.reasoning || "Recommendations loaded from previous analysis.");
+              if (profile.categories.length > 0) {
+                setActiveCategory(profile.categories[0].type);
+              }
+              setSaved(true);
               setLoading(false);
             }
             return;
           }
           
-          if (isMounted.current) {
+          if (isMountedRef.current) {
             setAnalyzing(true);
           }
           
@@ -110,36 +119,39 @@ const Results = () => {
               notes: profile.notes,
             });
             
-            if (!isMounted.current) return;
+            if (!isMountedRef.current) return;
             
             if (result && result.categories && result.categories.length > 0) {
               setCropCategories(result.categories);
               setReasoning(result.reasoning);
               setActiveCategory(result.categories[0].type);
-              
               setSaved(false);
             } else {
               setHasError(true);
-              toast.warning("Failed to get recommendations", {
-                description: "We're having trouble connecting to our AI service. Please try again later.",
-              });
+              if (isMountedRef.current) {
+                toast.warning("Failed to get recommendations", {
+                  description: "We're having trouble connecting to our AI service. Please try again later.",
+                });
+              }
             }
           } catch (err) {
-            if (!isMounted.current) return;
+            if (!isMountedRef.current) return;
             
             console.error("Failed to get recommendations:", err);
             setHasError(true);
-            toast.error("Failed to analyze farm data", {
-              description: "Please try again later.",
-            });
+            if (isMountedRef.current) {
+              toast.error("Failed to analyze farm data", {
+                description: "Please try again later.",
+              });
+            }
           } finally {
-            if (isMounted.current) {
+            if (isMountedRef.current) {
               setAnalyzing(false);
               setLoading(false);
             }
           }
         } else {
-          if (isMounted.current) {
+          if (isMountedRef.current) {
             setLoading(false);
             setHasError(true);
             toast.error("Farm profile not found", {
@@ -149,7 +161,7 @@ const Results = () => {
           navigate("/dashboard");
         }
       } else {
-        if (isMounted.current) {
+        if (isMountedRef.current) {
           setLoading(false);
           setHasError(true);
           toast.error("No farm profile selected", {
@@ -164,15 +176,17 @@ const Results = () => {
   }, [profileId, getFarmProfile, getCropRecommendations, updateFarmProfile, navigate]);
 
   const handleRefreshAnalysis = async () => {
-    if (!farmProfile || analyzing) return;
+    if (!farmProfile || analyzing || !isMountedRef.current) return;
     
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
     
-    setAnalyzing(true);
-    setHasError(false);
+    if (isMountedRef.current) {
+      setAnalyzing(true);
+      setHasError(false);
+    }
     
     try {
       const result = await getCropRecommendations({
@@ -187,7 +201,7 @@ const Results = () => {
         notes: farmProfile.notes,
       });
       
-      if (!isMounted.current) return;
+      if (!isMountedRef.current) return;
       
       if (result && result.categories && result.categories.length > 0) {
         setCropCategories(result.categories);
@@ -200,12 +214,14 @@ const Results = () => {
         });
       } else {
         setHasError(true);
-        toast.warning("Could not refresh recommendations", {
-          description: "There was an issue connecting to our AI service. Your current recommendations remain unchanged.",
-        });
+        if (isMountedRef.current) {
+          toast.warning("Could not refresh recommendations", {
+            description: "There was an issue connecting to our AI service. Your current recommendations remain unchanged.",
+          });
+        }
       }
     } catch (err) {
-      if (!isMounted.current) return;
+      if (!isMountedRef.current) return;
       
       console.error("Failed to refresh recommendations:", err);
       setHasError(true);
@@ -213,14 +229,14 @@ const Results = () => {
         description: "Please try again later",
       });
     } finally {
-      if (isMounted.current) {
+      if (isMountedRef.current) {
         setAnalyzing(false);
       }
     }
   };
 
   const handleSaveToProfile = async () => {
-    if (!farmProfile || cropCategories.length === 0) return;
+    if (!farmProfile || cropCategories.length === 0 || !isMountedRef.current) return;
     
     try {
       await updateFarmProfile(farmProfile.id, {
@@ -228,23 +244,25 @@ const Results = () => {
         reasoning: reasoning,
       } as Partial<FarmProfile>);
       
-      if (isMounted.current) {
+      if (isMountedRef.current) {
         setSaved(true);
+        
+        toast.success("Recommendations saved", {
+          description: "Your crop recommendations have been saved to your farm profile",
+        });
       }
-      
-      toast.success("Recommendations saved", {
-        description: "Your crop recommendations have been saved to your farm profile",
-      });
     } catch (err) {
       console.error("Failed to save recommendations:", err);
-      toast.error("Failed to save recommendations", {
-        description: "Please try again later",
-      });
+      if (isMountedRef.current) {
+        toast.error("Failed to save recommendations", {
+          description: "Please try again later",
+        });
+      }
     }
   };
 
   const handleDownloadReport = useCallback(() => {
-    if (!farmProfile || cropCategories.length === 0) return;
+    if (!farmProfile || cropCategories.length === 0 || !isMountedRef.current) return;
     
     try {
       const reportContent = `
@@ -290,36 +308,46 @@ ${reasoning}
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      toast.success("Report downloaded", {
-        description: "Your crop recommendation report has been downloaded",
-      });
+      if (isMountedRef.current) {
+        toast.success("Report downloaded", {
+          description: "Your crop recommendation report has been downloaded",
+        });
+      }
     } catch (err) {
       console.error("Failed to download report:", err);
-      toast.error("Failed to download report", {
-        description: "Please try again later",
-      });
+      if (isMountedRef.current) {
+        toast.error("Failed to download report", {
+          description: "Please try again later",
+        });
+      }
     }
-  }, [farmProfile, cropCategories, reasoning]);
+  }, [farmProfile, cropCategories, reasoning, isMountedRef]);
 
   const handleShareResults = useCallback(() => {
-    if (!farmProfile) return;
+    if (!farmProfile || !isMountedRef.current) return;
     
     try {
       navigator.clipboard.writeText(window.location.href)
         .then(() => {
-          toast.success("Link copied to clipboard", {
-            description: "Share this link to show your crop recommendations",
-          });
+          if (isMountedRef.current) {
+            toast.success("Link copied to clipboard", {
+              description: "Share this link to show your crop recommendations",
+            });
+          }
         })
         .catch((err) => {
           console.error("Failed to copy link:", err);
-          toast.error("Failed to copy link");
+          if (isMountedRef.current) {
+            toast.error("Failed to copy link");
+          }
         });
     } catch (err) {
       console.error("Error sharing:", err);
-      toast.error("Failed to share results");
+      if (isMountedRef.current) {
+        toast.error("Failed to share results");
+      }
     }
-  }, [farmProfile]);
+  }, [farmProfile, isMountedRef]);
 
   const activeCategoryData = cropCategories.find(cat => cat.type === activeCategory);
   const activeCrops = activeCategoryData?.crops || [];
